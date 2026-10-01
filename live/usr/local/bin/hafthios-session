@@ -6,4 +6,4 @@ export GDK_BACKEND=wayland
 export GTK_THEME=Adwaita:dark
 export WLR_RENDERER=pixman
 export GSK_RENDERER=cairo
-exec dbus-run-session cage -- /usr/local/bin/hafthios-welcome
+exec dbus-run-session cage -- /usr/local/bin/hafthios-welcome > /dev/ttyS0 2>&1
