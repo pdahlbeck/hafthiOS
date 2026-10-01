@@ -8,6 +8,7 @@ trap 'rm -rf -- "$workspace"' EXIT
 profile="$workspace/profile"
 cp -a /usr/share/archiso/configs/baseline "$profile"
 cp -a "$root/live/." "$profile/airootfs/"
+python3 "$root/scripts/build-guide.py" "$profile/airootfs/usr/share/doc/hafthios"
 # Copy the current baseline boot files; adjust only image branding/compression.
 cat >> "$profile/profiledef.sh" <<'PROFILE'
 iso_name="hafthios-prototype"

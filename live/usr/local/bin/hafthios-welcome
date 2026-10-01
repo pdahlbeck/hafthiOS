@@ -2,6 +2,8 @@
 """Read-only installer UI prototype. No target-disk writes are implemented."""
 import json
 import subprocess
+import sys
+from pathlib import Path
 
 
 def eligible_disks(payload):
@@ -33,6 +35,9 @@ def main():
         def __init__(self):
             super().__init__(application_id='org.hafthios.Welcome')
             self.disks = []
+            self.guide_entries = []
+            self.guide_directory = Path("/usr/share/doc/hafthios")
+            self.guide_source_visible = False
 
         def do_activate(self):
             css = Gtk.CssProvider()
@@ -58,12 +63,19 @@ def main():
             root.append(self.label('HAFÞI OS  /  PROTOTYPE 01', 'brand'))
             self.pages = Gtk.Stack()
             self.pages.set_vexpand(True)
+            self.pages.set_vhomogeneous(False)
             self.pages.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
             root.append(self.pages)
             self.build_welcome()
             self.build_disk_page()
             self.build_review_page()
+            self.build_guide_page()
+            keys = Gtk.EventControllerKey()
+            keys.connect('key-pressed', self.guide_key)
+            self.window.add_controller(keys)
             root.append(self.label('Prototype preview · Your disks will not be changed.', 'muted'))
+            if '--guide' in sys.argv:
+                self.show_guide(None)
             self.window.present()
             GLib.idle_add(self.boot_ready)
 
@@ -105,8 +117,130 @@ def main():
             note = self.label('Try the installation screens. Disk installation is not enabled in this first prototype.', 'notice')
             page.append(note)
             page.append(self.button('Install Hafþi OS', self.show_disks, True))
+            page.append(self.button('Hafþi OS Guide', self.show_guide))
             page.append(self.button('Network settings', self.network))
             page.append(self.button('Restart', self.restart))
+
+        def guide_key(self, controller, keyval, keycode, state):
+            if keyval == Gdk.KEY_F1:
+                self.show_guide(None)
+                return True
+            return False
+
+        def build_guide_page(self):
+            page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+            page.append(self.label('Hafþi OS File Guide', 'subtitle'))
+            self.guide_search = Gtk.SearchEntry()
+            self.guide_search.set_placeholder_text('Search files and explanations…')
+            self.guide_search.connect('search-changed', self.filter_guide)
+            page.append(self.guide_search)
+            columns = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+            columns.set_vexpand(True)
+            self.guide_list = Gtk.ListBox()
+            self.guide_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
+            self.guide_list.connect('row-selected', self.select_guide_article)
+            navigation = Gtk.ScrolledWindow()
+            navigation.set_min_content_width(300)
+            navigation.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+            navigation.set_child(self.guide_list)
+            columns.set_start_child(navigation)
+            self.guide_text = Gtk.TextView()
+            self.guide_text.set_editable(False)
+            self.guide_text.set_cursor_visible(False)
+            self.guide_text.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+            self.guide_text.set_left_margin(20)
+            self.guide_text.set_right_margin(20)
+            self.guide_text.set_top_margin(14)
+            self.guide_text.set_bottom_margin(14)
+            reading = Gtk.ScrolledWindow()
+            reading.set_child(self.guide_text)
+            columns.set_end_child(reading)
+            page.append(columns)
+            controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
+            controls.append(self.button('Back to welcome', lambda _: self.pages.set_visible_child_name('welcome')))
+            self.source_button = self.button('Show source', self.toggle_guide_source)
+            controls.append(self.source_button)
+            page.append(controls)
+            self.pages.add_named(page, 'guide')
+
+        def show_guide(self, _):
+            self.pages.set_visible_child_name('guide')
+            try:
+                catalog = json.loads((self.guide_directory / 'file-guide.json').read_text())
+                self.guide_entries = catalog['files']
+                if not self.guide_entries:
+                    raise ValueError('The file guide is empty')
+                self.filter_guide(self.guide_search)
+                GLib.idle_add(self.guide_ready)
+            except (OSError, ValueError, KeyError) as error:
+                self.guide_text.get_buffer().set_text(f'The local guide could not be opened: {error}')
+                self.source_button.set_sensitive(False)
+
+        def guide_ready(self):
+            try:
+                with open('/dev/ttyS0', 'w') as serial:
+                    serial.write('HAFTHIOS_GUIDE_READY\n')
+            except OSError:
+                pass
+            return False
+
+        def filter_guide(self, search):
+            query = search.get_text().casefold().strip()
+            while self.guide_list.get_first_child() is not None:
+                self.guide_list.remove(self.guide_list.get_first_child())
+            for entry in self.guide_entries:
+                searchable = ' '.join([entry['path'], entry['purpose']] + entry['details']).casefold()
+                if query not in searchable:
+                    continue
+                row = Gtk.ListBoxRow()
+                row.article = entry
+                row.set_tooltip_text(entry['path'])
+                label = self.label(entry['path'])
+                label.set_margin_top(10)
+                label.set_margin_bottom(10)
+                label.set_margin_start(10)
+                label.set_margin_end(10)
+                row.set_child(label)
+                self.guide_list.append(row)
+            first = self.guide_list.get_row_at_index(0)
+            self.guide_list.select_row(first)
+            if first is None:
+                self.guide_text.get_buffer().set_text('No files match your search.')
+                self.source_button.set_sensitive(False)
+
+        def select_guide_article(self, listbox, row):
+            if row is None:
+                return
+            self.guide_source_visible = False
+            self.source_button.set_label('Show source')
+            self.source_button.set_sensitive(True)
+            self.display_guide_article(row.article)
+
+        def display_guide_article(self, article):
+            self.guide_text.set_monospace(self.guide_source_visible)
+            if self.guide_source_visible:
+                path = Path(article['path'])
+                if path.is_absolute() or '..' in path.parts:
+                    text = 'Invalid source path in the guide.'
+                else:
+                    try:
+                        text = (self.guide_directory / 'sources' / path).read_text()
+                    except OSError as error:
+                        text = f'The bundled source could not be read: {error}'
+            else:
+                text = (article['path'] + '\n\n' + article['purpose']
+                        + '\n\nWHEN IT IS USED\n' + article['when']
+                        + '\n\nHOW IT WORKS\n\n' + '\n\n'.join(article['details'])
+                        + '\n\nCONNECTED FILES\n' + '\n'.join(article['connections']))
+            self.guide_text.get_buffer().set_text(text)
+
+        def toggle_guide_source(self, _):
+            row = self.guide_list.get_selected_row()
+            if row is None:
+                return
+            self.guide_source_visible = not self.guide_source_visible
+            self.source_button.set_label('Show explanation' if self.guide_source_visible else 'Show source')
+            self.display_guide_article(row.article)
 
         def build_disk_page(self):
             page = self.page('disks', 'Choose your disk',
@@ -162,7 +296,7 @@ def main():
         def restart(self, _):
             subprocess.Popen(['systemctl', 'reboot'])
 
-    Welcome().run(None)
+    Welcome().run([sys.argv[0]])
 
 
 if __name__ == '__main__':

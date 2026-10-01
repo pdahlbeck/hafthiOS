@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import time
 
-def capture_screen(sock_path, filename):
+def qmp_request(sock_path, name, arguments):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
         sock.settimeout(20)
         sock.connect(str(sock_path))
@@ -26,7 +26,10 @@ def capture_screen(sock_path, filename):
                 if 'return' in response:
                     return response['return']
         command('qmp_capabilities')
-        command('screendump', {'filename': str(filename)})
+        return command(name, arguments)
+
+def capture_screen(sock_path, filename):
+    return qmp_request(sock_path, 'screendump', {'filename': str(filename)})
 
 out = pathlib.Path('out').resolve()
 iso = max(out.glob('*.iso'), key=lambda p: p.stat().st_mtime)
@@ -57,7 +60,17 @@ with tempfile.TemporaryDirectory() as tmp:
             raise RuntimeError('GTK ready marker not received within 6 minutes')
         time.sleep(3)
         capture_screen(sock_path, out / 'boot-screen.ppm')
-        print('BIOS VM boot passed: graphical welcome screen reached.')
+        qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'f1'}]})
+        deadline = time.monotonic() + 90
+        while time.monotonic() < deadline:
+            if 'HAFTHIOS_GUIDE_READY' in serial_path.read_text(errors='replace'):
+                break
+            time.sleep(2)
+        else:
+            raise RuntimeError('The offline guide did not open after F1')
+        time.sleep(3)
+        capture_screen(sock_path, out / 'guide-screen.ppm')
+        print('BIOS VM boot passed: welcome screen and offline guide reached.')
     finally:
         if process.poll() is None and not (out / 'boot-screen.ppm').exists():
             try:

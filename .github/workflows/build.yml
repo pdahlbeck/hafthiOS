@@ -36,6 +36,7 @@ jobs:
           name: hafthiOS-preview
           path: |
             out/boot-screen.ppm
+            out/guide-screen.ppm
             out/boot-serial.log
             out/qemu.log
             out/size.txt
@@ -50,6 +51,7 @@ jobs:
             out/*.sha256
             out/size.txt
             out/boot-screen.ppm
+            out/guide-screen.ppm
             out/boot-serial.log
             out/qemu.log
           compression-level: 0
