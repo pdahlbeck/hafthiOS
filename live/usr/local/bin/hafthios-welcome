@@ -29,11 +29,12 @@ def read_disks():
 def main():
     import gi
     gi.require_version('Gtk', '4.0')
-    from gi.repository import Gtk, Gdk, GLib
+    from gi.repository import Gtk, Gdk, GLib, Gio, Pango
 
     class Welcome(Gtk.Application):
         def __init__(self):
-            super().__init__(application_id='org.hafthios.Welcome')
+            super().__init__(application_id='org.hafthios.Welcome',
+                             flags=Gio.ApplicationFlags.NON_UNIQUE)
             self.disks = []
             self.guide_entries = []
             self.guide_directory = Path("/usr/share/doc/hafthios")
@@ -136,6 +137,10 @@ def main():
             page.append(self.guide_search)
             columns = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
             columns.set_vexpand(True)
+            columns.set_position(340)
+            columns.set_resize_start_child(False)
+            columns.set_shrink_start_child(True)
+            columns.set_resize_end_child(True)
             self.guide_list = Gtk.ListBox()
             self.guide_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
             self.guide_list.connect('row-selected', self.select_guide_article)
@@ -196,6 +201,8 @@ def main():
                 row.article = entry
                 row.set_tooltip_text(entry['path'])
                 label = self.label(entry['path'])
+                label.set_max_width_chars(38)
+                label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
                 label.set_margin_top(10)
                 label.set_margin_bottom(10)
                 label.set_margin_start(10)
