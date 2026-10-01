@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""Read-only installer UI prototype. No target-disk writes are implemented."""
+import json
+import subprocess
+
+
+def eligible_disks(payload):
+    return [disk for disk in payload.get('blockdevices', [])
+            if disk.get('type') == 'disk' and not disk.get('ro')]
+
+
+def disk_label(disk):
+    model = str(disk.get('model') or 'Disk').strip()
+    return f"{disk['path']} · {model} · {disk['size']}"
+
+
+def read_disks():
+    result = subprocess.run(
+        ['lsblk', '--json', '--bytes', '--output', 'PATH,MODEL,SIZE,TYPE,RO'],
+        check=True, capture_output=True, text=True, timeout=10)
+    disks = eligible_disks(json.loads(result.stdout))
+    for disk in disks:
+        disk['size'] = f"{int(disk['size']) / 1_000_000_000:.1f} GB"
+    return disks
+
+
+def main():
+    import gi
+    gi.require_version('Gtk', '4.0')
+    from gi.repository import Gtk, Gdk, GLib
+
+    class Welcome(Gtk.Application):
+        def __init__(self):
+            super().__init__(application_id='org.hafthios.Welcome')
+            self.disks = []
+
+        def do_activate(self):
+            css = Gtk.CssProvider()
+            css.load_from_data(b'''
+                window { background: #101e28; color: #ecf4f5; }
+                .brand { font-size: 16px; color: #80d6d1; font-weight: bold; }
+                .title { font-size: 44px; font-weight: bold; }
+                .subtitle { font-size: 18px; color: #b8cdd5; }
+                .muted { color: #9cb3be; }
+                .notice { background: #1b303b; border-radius: 12px; padding: 18px; }
+                button { border-radius: 9px; padding: 12px 22px; }
+                button.suggested-action { background: #76d1c7; color: #10262d; }
+            ''')
+            Gtk.StyleContext.add_provider_for_display(
+                Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+            self.window = Gtk.ApplicationWindow(application=self, title='Hafþi OS')
+            self.window.set_default_size(960, 680)
+            self.window.fullscreen()
+            root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=24)
+            for side in ('top', 'bottom', 'start', 'end'):
+                getattr(root, 'set_margin_' + side)(48)
+            self.window.set_child(root)
+            root.append(self.label('HAFÞI OS  /  PROTOTYPE 01', 'brand'))
+            self.pages = Gtk.Stack()
+            self.pages.set_vexpand(True)
+            self.pages.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+            root.append(self.pages)
+            self.build_welcome()
+            self.build_disk_page()
+            self.build_review_page()
+            root.append(self.label('Prototype preview · Your disks will not be changed.', 'muted'))
+            self.window.present()
+            GLib.idle_add(self.boot_ready)
+
+        def boot_ready(self):
+            # Serial marker lets the VM smoke test check that GTK reached the UI.
+            try:
+                with open('/dev/ttyS0', 'w') as serial:
+                    serial.write('HAFTHIOS_GUI_READY\n')
+            except OSError:
+                pass
+            return False
+
+        def label(self, text, style=None):
+            label = Gtk.Label(label=text, xalign=0)
+            label.set_wrap(True)
+            if style:
+                label.add_css_class(style)
+            return label
+
+        def page(self, name, title, subtitle):
+            page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=22)
+            page.set_valign(Gtk.Align.CENTER)
+            page.append(self.label(title, 'title'))
+            page.append(self.label(subtitle, 'subtitle'))
+            self.pages.add_named(page, name)
+            return page
+
+        def button(self, text, action, primary=False):
+            button = Gtk.Button(label=text)
+            button.set_halign(Gtk.Align.START)
+            button.connect('clicked', action)
+            if primary:
+                button.add_css_class('suggested-action')
+            return button
+
+        def build_welcome(self):
+            page = self.page('welcome', 'A quiet desktop.\nA powerful terminal.',
+                             'Arch Linux, Wayland and Hafþi. A simpler place to start.')
+            note = self.label('Try the installation screens. Disk installation is not enabled in this first prototype.', 'notice')
+            page.append(note)
+            page.append(self.button('Install Hafþi OS', self.show_disks, True))
+            page.append(self.button('Network settings', self.network))
+            page.append(self.button('Restart', self.restart))
+
+        def build_disk_page(self):
+            page = self.page('disks', 'Choose your disk',
+                             'Preview a target disk. Nothing will be erased or installed.')
+            self.disk_choice = Gtk.DropDown.new_from_strings(['Scanning disks…'])
+            page.append(self.disk_choice)
+            self.disk_status = self.label('', 'muted')
+            page.append(self.disk_status)
+            self.continue_button = self.button('Review installation', self.review, True)
+            page.append(self.continue_button)
+            page.append(self.button('Back', lambda _: self.pages.set_visible_child_name('welcome')))
+
+        def show_disks(self, _):
+            self.pages.set_visible_child_name('disks')
+            try:
+                self.disks = read_disks()
+                labels = [disk_label(disk) for disk in self.disks] or ['No writable disks found']
+                self.disk_choice.set_model(Gtk.StringList.new(labels))
+                self.disk_choice.set_selected(0)
+                self.continue_button.set_sensitive(bool(self.disks))
+                self.disk_status.set_text('Choose a disposable virtual disk when testing in a VM.')
+            except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+                self.disks = []
+                self.continue_button.set_sensitive(False)
+                self.disk_status.set_text(f'Could not read disks: {error}')
+
+        def build_review_page(self):
+            page = self.page('review', 'Meet your new desktop',
+                             'A preview of the system we are building.')
+            self.summary = self.label('', 'notice')
+            page.append(self.summary)
+            page.append(self.label('Installation is unavailable in Prototype 01.\nThis preview has not changed your disk.', 'muted'))
+            page.append(self.button('Back', lambda _: self.pages.set_visible_child_name('disks')))
+            page.append(self.button('Return to welcome', lambda _: self.pages.set_visible_child_name('welcome'), True))
+
+        def review(self, _):
+            index = self.disk_choice.get_selected()
+            if index >= len(self.disks):
+                return
+            disk = self.disks[index]
+            self.summary.set_text('Selected disk: ' + disk_label(disk)
+                                  + '\n\nPlanned system: Arch Linux'
+                                  + '\nDesktop: Niri / Wayland'
+                                  + '\nTerminal: Hafþi'
+                                  + '\nBrowser: Google Chrome'
+                                  + '\n\nMode: preview only')
+            self.pages.set_visible_child_name('review')
+
+        def network(self, _):
+            # Configure only the disposable live session; no target disk mounts.
+            subprocess.Popen(['foot', '--title=Live network settings', 'nmtui'])
+
+        def restart(self, _):
+            subprocess.Popen(['systemctl', 'reboot'])
+
+    Welcome().run(None)
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export XDG_RUNTIME_DIR=/run/user/0
+install -d -m 700 "$XDG_RUNTIME_DIR"
+export GDK_BACKEND=wayland
+export GTK_THEME=Adwaita:dark
+export WLR_RENDERER=pixman
+export GSK_RENDERER=cairo
+exec dbus-run-session cage -- /usr/local/bin/hafthios-welcome

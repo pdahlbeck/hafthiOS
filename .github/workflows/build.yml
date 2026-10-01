@@ -1,0 +1,42 @@
+name: Build prototype ISO
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  iso:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check prototype
+        run: |
+          python3 -m unittest discover -s tests -v
+          python3 -m py_compile live/usr/local/bin/hafthios-welcome
+          bash -n scripts/build-iso.sh live/usr/local/bin/hafthios-session live/root/.bash_profile
+      - name: Build with official Archiso in an isolated container
+        run: |
+          docker run --rm --privileged \
+            -v "$PWD:/project" -w /project archlinux:base \
+            bash -lc 'pacman -Syu --noconfirm archiso && bash scripts/build-iso.sh'
+      - name: Boot graphical prototype in a disposable VM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86
+          python3 scripts/test-boot.py
+      - name: Report ISO size
+        run: cat out/size.txt
+      - name: Upload bootable prototype
+        uses: actions/upload-artifact@v4
+        with:
+          name: hafthiOS-prototype
+          path: |
+            out/*.iso
+            out/*.sha256
+            out/size.txt
+            out/boot-screen.ppm
+            out/boot-serial.log
+          compression-level: 0
+          retention-days: 14
