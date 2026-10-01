@@ -7,6 +7,27 @@ import subprocess
 import tempfile
 import time
 
+def capture_screen(sock_path, filename):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.settimeout(20)
+        sock.connect(str(sock_path))
+        file = sock.makefile('rwb')
+        file.readline()
+        def command(name, arguments=None):
+            request = {'execute': name}
+            if arguments:
+                request['arguments'] = arguments
+            file.write((json.dumps(request) + '\n').encode())
+            file.flush()
+            while True:
+                response = json.loads(file.readline())
+                if 'error' in response:
+                    raise RuntimeError(response)
+                if 'return' in response:
+                    return response['return']
+        command('qmp_capabilities')
+        command('screendump', {'filename': str(filename)})
+
 out = pathlib.Path('out').resolve()
 iso = max(out.glob('*.iso'), key=lambda p: p.stat().st_mtime)
 with tempfile.TemporaryDirectory() as tmp:
@@ -18,7 +39,7 @@ with tempfile.TemporaryDirectory() as tmp:
     serial_path = out / 'boot-serial.log'
     process = subprocess.Popen([
         'qemu-system-x86_64', '-accel', 'tcg', '-m', '2048', '-smp', '2',
-        '-cdrom', str(iso), '-boot', 'd',
+        '-cpu', 'max', '-cdrom', str(iso), '-boot', 'd',
         '-drive', f'file={disk},format=raw,if=virtio',
         '-vga', 'none', '-device', 'virtio-vga', '-display', 'none',
         '-serial', f'file:{serial_path}', '-monitor', 'none',
@@ -35,27 +56,16 @@ with tempfile.TemporaryDirectory() as tmp:
         else:
             raise RuntimeError('GTK ready marker not received within 6 minutes')
         time.sleep(3)
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.settimeout(20)
-            sock.connect(str(sock_path))
-            file = sock.makefile('rwb')
-            file.readline()
-            def command(name, arguments=None):
-                request = {'execute': name}
-                if arguments:
-                    request['arguments'] = arguments
-                file.write((json.dumps(request) + '\n').encode())
-                file.flush()
-                while True:
-                    response = json.loads(file.readline())
-                    if 'error' in response:
-                        raise RuntimeError(response)
-                    if 'return' in response:
-                        return response['return']
-            command('qmp_capabilities')
-            command('screendump', {'filename': str(out / 'boot-screen.ppm')})
+        capture_screen(sock_path, out / 'boot-screen.ppm')
         print('BIOS VM boot passed: graphical welcome screen reached.')
     finally:
+        if process.poll() is None and not (out / 'boot-screen.ppm').exists():
+            try:
+                capture_screen(sock_path, out / 'boot-screen.ppm')
+            except (OSError, RuntimeError, ValueError):
+                pass
+        if serial_path.exists():
+            print(serial_path.read_text(errors='replace')[-12000:])
         process.terminate()
         try:
             process.wait(timeout=20)

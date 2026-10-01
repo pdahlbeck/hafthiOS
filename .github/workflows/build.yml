@@ -21,6 +21,7 @@ jobs:
           docker run --rm --privileged \
             -v "$PWD:/project" -w /project archlinux:base \
             bash -lc 'pacman -Syu --noconfirm archiso grub python && bash scripts/build-iso.sh'
+          sudo chown -R "$(id -u):$(id -g)" out
       - name: Boot graphical prototype in a disposable VM
         run: |
           sudo apt-get update
