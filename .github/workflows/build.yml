@@ -20,7 +20,7 @@ jobs:
         run: |
           docker run --rm --privileged \
             -v "$PWD:/project" -w /project archlinux:base \
-            bash -lc 'pacman -Syu --noconfirm archiso grub && bash scripts/build-iso.sh'
+            bash -lc 'pacman -Syu --noconfirm archiso grub python && bash scripts/build-iso.sh'
       - name: Boot graphical prototype in a disposable VM
         run: |
           sudo apt-get update
@@ -28,6 +28,17 @@ jobs:
           python3 scripts/test-boot.py
       - name: Report ISO size
         run: cat out/size.txt
+      - name: Upload VM preview and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hafthiOS-preview
+          path: |
+            out/boot-screen.ppm
+            out/boot-serial.log
+            out/qemu.log
+            out/size.txt
+          retention-days: 14
       - name: Upload bootable prototype
         if: always()
         uses: actions/upload-artifact@v4

@@ -19,7 +19,7 @@ The ISO size is measured on each build. Fitting a marketed 1 GB USB means stayin
 ## Build on Arch Linux
 
 ```sh
-sudo pacman -S --needed archiso grub
+sudo pacman -S --needed archiso grub python
 sudo bash scripts/build-iso.sh
 ```
 
