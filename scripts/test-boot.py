@@ -90,16 +90,24 @@ with tempfile.TemporaryDirectory() as tmp:
         moved = Image.open(out / 'splash-motion.ppm').convert('RGB')
         if ImageChops.difference(frame, moved).getbbox() is None:
             raise RuntimeError('The ship splash did not animate')
-        qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'esc'}]})
-        time.sleep(1)
-        capture_screen(sock_path, out / 'boot-details.ppm')
-        details = Image.open(out / 'boot-details.ppm').convert('RGB')
-        if ship_visible(details):
+        qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'esc'}], 'hold-time': 300})
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            time.sleep(1)
+            capture_screen(sock_path, out / 'boot-details.ppm')
+            details = Image.open(out / 'boot-details.ppm').convert('RGB')
+            if not ship_visible(details):
+                break
+        else:
             raise RuntimeError('Esc did not replace the ship with boot details')
-        qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'esc'}]})
-        time.sleep(1)
-        capture_screen(sock_path, out / 'splash-return.ppm')
-        if not ship_visible(Image.open(out / 'splash-return.ppm').convert('RGB')):
+        qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'esc'}], 'hold-time': 300})
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            time.sleep(1)
+            capture_screen(sock_path, out / 'splash-return.ppm')
+            if ship_visible(Image.open(out / 'splash-return.ppm').convert('RGB')):
+                break
+        else:
             raise RuntimeError('The second Esc did not restore the ship')
         deadline = time.monotonic() + 360
         while time.monotonic() < deadline:

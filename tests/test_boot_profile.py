@@ -28,7 +28,8 @@ class BootProfileTests(unittest.TestCase):
                 self.assertTrue(text.startswith(original))
                 self.assertEqual(text.count(' splash '), 1)
                 self.assertIn('quiet', text)
-                self.assertIn('systemd.show_status=false', text)
+                self.assertIn('systemd.show_status=true', text)
+                self.assertIn('fbcon=nodefer', text)
 
     def test_missing_boot_entries_fail_instead_of_building_a_noisy_image(self):
         with tempfile.TemporaryDirectory() as tmp:

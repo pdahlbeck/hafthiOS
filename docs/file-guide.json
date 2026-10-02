@@ -239,7 +239,7 @@
         "tests/test_boot_profile.py"
       ],
       "details": [
-        "Adds quiet splash parameters to the existing Linux entries while retaining the official live-medium discovery and loopback arguments. Hides the short UEFI menu, shortens the BIOS menu, and brands entries as Hafthi OS.",
+        "Adds quiet splash parameters, enables status collection behind the splash, and prevents deferred framebuffer-console takeover from leaving a stale ship frame in the details view. Retains the official live-medium discovery and loopback arguments. Hides the short UEFI menu, shortens the BIOS menu, and brands entries as Hafthi OS.",
         "Fails if the expected boot entries are absent rather than silently producing an image without the splash. Running it twice does not duplicate parameters."
       ]
     },
@@ -263,7 +263,7 @@
         "live/etc/plymouth/plymouthd.conf"
       ],
       "details": [
-        "Keeps the official Archiso discovery hooks and adds kms, keyboard and plymouth after udev. The kms hook includes graphics drivers and the keyboard hook makes Esc available before the live filesystem is mounted; Plymouth draws the ship while the live system starts."
+        "Keeps the official Archiso discovery hooks and adds kms, keyboard and plymouth after udev. Explicitly loads the PS/2 and USB keyboard drivers before starting Plymouth. The kms hook includes graphics drivers and the keyboard hook makes Esc available before the live filesystem is mounted; Plymouth draws the ship while the live system starts."
       ]
     },
     {
