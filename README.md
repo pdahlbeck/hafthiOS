@@ -44,3 +44,13 @@ Hafþi OS is an independent project, not an official Arch Linux distribution. In
 ## Quiet startup
 
 The live image shows an animated ship splash during OS startup. Press **Esc** to toggle boot details, and press it again to return to the ship. Firmware screens before the OS starts remain controlled by the computer. The welcome screen and offline guide remain available after boot.
+
+## Complete ISO file register
+
+**Hafþi OS Guide** (or **F1**) opens **All ISO files**. Search by full or partial path, package name, or layer. The register covers every filesystem entry in the ISO filesystem, the compressed live system, the early and main initramfs, and the EFI FAT image, including directories, hidden files, links and device nodes. Ordinary data archives are indexed as files, rather than interpreting library/archive members as filesystem entries. Runtime virtual mounts such as `/proc` are not files shipped in the ISO.
+
+Each record includes its layer, path, type, byte size where applicable, permissions, UID/GID, link target, and verified live-package owner/version/description where available. Project explanations are identified separately from location-based inference; unknown file-specific roles are explicitly marked. A package description describes the package, not a claim that every file has that exact purpose.
+
+The local database is `/usr/share/doc/hafthios/file-register.sqlite`. A copy is also at `/hafthios-file-register.sqlite` in the ISO filesystem. The build exports `hafthios-file-register.csv` and `hafthios-file-register.sqlite` next to the ISO, with final container sizes. The embedded register leaves the final compressed live-image size unspecified because that container is generated after embedding the register. Every embedded layer/path/type is compared against a fresh extraction of the final ISO.
+
+Choose **Project source guide** for the separate, detailed source explanations and snapshots.

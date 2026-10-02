@@ -69,7 +69,8 @@
         "Enables NetworkManager in the live image, then invokes mkarchiso to produce out/*.iso.",
         "Writes a SHA256 checksum and size.txt. A marketed 1 GB USB target means less than 1,000,000,000 bytes.",
         "The temporary build workspace is removed on exit. No selected installation disk is partitioned, formatted or mounted.",
-        "Installs Plymouth, applies the quiet boot configuration, and masks the default early quit/wait services. The tty1 getty releases Plymouth with retain-splash just before starting the graphical session."
+        "Installs Plymouth, applies the quiet boot configuration, and masks the default early quit/wait services. The tty1 getty releases Plymouth with retain-splash just before starting the graphical session.",
+        "Packages and validates the full ISO file register with package-inventory.py before calculating the final ISO checksum."
       ]
     },
     {
@@ -104,7 +105,8 @@
         "Sends F1 through QEMU to open the offline guide and waits for HAFTHIOS_GUIDE_READY.",
         "Captures diagnostics on failure and terminates the VM when the test ends.",
         "This is a BIOS VM smoke test. It is not a destructive installation test or a real-hardware certification.",
-        "Detects the ship splash in screenshots before GTK starts, checks that frames change, presses Esc and verifies the ship artwork disappears for details, then verifies the second Esc restores the ship. Also checks the welcome screen and F1 guide as before."
+        "Detects the ship splash in screenshots before GTK starts, checks that frames change, presses Esc and verifies the ship artwork disappears for details, then verifies the second Esc restores the ship. Also checks the welcome screen and F1 guide as before.",
+        "Requires the complete register ready marker and more than 1,000 filesystem entries when the guide opens."
       ]
     },
     {
@@ -169,7 +171,8 @@
         "Network settings launches nmtui in Foot for the live session. Restart calls systemctl reboot.",
         "The guide is read from /usr/share/doc/hafthios/. A search field filters file names and explanations; each article can show its bundled source snapshot.",
         "F1 opens the guide. Serial markers are used by the VM test to verify that the UI and guide loaded.",
-        "The guide source viewer recognises binary assets and displays an explanation instead of attempting to show image bytes as UTF-8 text."
+        "The guide source viewer recognises binary assets and displays an explanation instead of attempting to show image bytes as UTF-8 text.",
+        "The guide defaults to the complete ISO file register. Queries the read-only SQLite database by path, package or image layer, renders 100 rows per page and provides Previous/Next controls. The source guide remains a separate view."
       ]
     },
     {
@@ -311,6 +314,44 @@
       ],
       "details": [
         "A PNG format conversion of the supplied JPEG, preserving its decoded pixels and proportions. This is a binary image, not a text source file."
+      ]
+    },
+    {
+      "path": "scripts/build-inventory.py",
+      "purpose": "Indexes every entry in the live root, ISO filesystem, early/main initramfs and EFI FAT image.",
+      "when": "During ISO construction and final verification.",
+      "connections": [
+        "scripts/package-inventory.py",
+        "tests/test_inventory.py"
+      ],
+      "details": [
+        "Walks all entries without following symbolic links, including dotfiles, broken links, directories and special nodes. Reads exact live-system package owner/version/description from pacman manifests. Records type, size, mode, UID/GID and link target.",
+        "Labels project explanations, package metadata, location-based inference and unverified roles distinctly. Other image layers do not claim live-system package ownership merely because paths match.",
+        "Creates a paginated SQLite register, including the register itself, and exports the final records as CSV. Embedded compressed-container size is intentionally unknown until packaging; the exported final register records the actual size. Coverage verification compares every layer/path/type with the final ISO."
+      ]
+    },
+    {
+      "path": "scripts/package-inventory.py",
+      "purpose": "Embeds and verifies the complete ISO file register.",
+      "when": "After Archiso creates the first ISO.",
+      "connections": [
+        "scripts/build-inventory.py",
+        "scripts/build-iso.sh"
+      ],
+      "details": [
+        "Extracts the ISO with xorriso, early/main initramfs with lsinitcpio, and the EFI FAT image with mtools. Generates the embedded database in the actual prepared root filesystem.",
+        "Invalidates only the SquashFS and ISO build checkpoints and repacks, reusing package installation and boot images. Extracts the finished ISO and SquashFS to independently verify full path/type coverage against the embedded register. Exports SQLite, CSV and layer counts beside the ISO."
+      ]
+    },
+    {
+      "path": "tests/test_inventory.py",
+      "purpose": "Verifies inventory coverage, package ownership and self-indexing.",
+      "when": "During local validation and GitHub Actions.",
+      "connections": [
+        "scripts/build-inventory.py"
+      ],
+      "details": [
+        "Checks dotfiles, dangling symlinks, directory symlinks without traversal, exact metadata ownership, stable register self-size and absence of transient SQLite journal entries. Verifies missing entries are rejected by the final coverage checker."
       ]
     }
   ]

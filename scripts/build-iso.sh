@@ -47,7 +47,13 @@ ln -sf /usr/lib/systemd/system/NetworkManager.service "$profile/airootfs/etc/sys
 ln -sf /dev/null "$profile/airootfs/etc/systemd/system/plymouth-quit.service"
 ln -sf /dev/null "$profile/airootfs/etc/systemd/system/plymouth-quit-wait.service"
 mkdir -p "$root/out"
+# First package the official images. Reserve the ISO-level register path so it
+# is present in both passes. Package installation is reused for the second pass.
+mkdir -p "$workspace/work/iso"
+touch "$workspace/work/iso/hafthios-file-register.sqlite"
 mkarchiso -v -w "$workspace/work" -o "$root/out" "$profile"
+python3 "$root/scripts/package-inventory.py" "$workspace" "$root"
+
 python3 - "$root/out" <<'PY'
 import hashlib, pathlib, sys
 out = pathlib.Path(sys.argv[1])

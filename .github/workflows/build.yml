@@ -20,7 +20,7 @@ jobs:
         run: |
           docker run --rm --privileged \
             -v "$PWD:/project" -w /project archlinux:base \
-            bash -lc 'pacman -Syu --noconfirm archiso grub python && bash scripts/build-iso.sh'
+            bash -lc 'pacman -Syu --noconfirm archiso grub python mtools && bash scripts/build-iso.sh'
           sudo chown -R "$(id -u):$(id -g)" out
       - name: Boot graphical prototype in a disposable VM
         run: |
@@ -42,6 +42,7 @@ jobs:
             out/boot-serial.log
             out/qemu.log
             out/size.txt
+            out/*file-register*
           retention-days: 14
       - name: Upload bootable prototype
         if: always()
@@ -52,6 +53,7 @@ jobs:
             out/*.iso
             out/*.sha256
             out/size.txt
+            out/*file-register*
             out/boot-screen.ppm
             out/splash-screen.png
             out/boot-details.ppm

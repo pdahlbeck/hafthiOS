@@ -128,6 +128,11 @@ with tempfile.TemporaryDirectory() as tmp:
             time.sleep(2)
         else:
             raise RuntimeError('The offline guide did not open after F1')
+        if 'HAFTHIOS_INVENTORY_READY ' not in serial_path.read_text(errors='replace'):
+            raise RuntimeError('The complete ISO register did not load')
+        marker = serial_path.read_text(errors='replace').split('HAFTHIOS_INVENTORY_READY ')[-1].splitlines()[0]
+        if int(marker) < 1000:
+            raise RuntimeError('ISO register is unexpectedly small')
         time.sleep(3)
         capture_screen(sock_path, out / 'guide-screen.ppm')
         print('BIOS VM boot passed: animated ship, Esc details, welcome screen and offline guide reached.')

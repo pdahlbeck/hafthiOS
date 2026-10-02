@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Read-only installer UI prototype. No target-disk writes are implemented."""
 import json
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -135,6 +136,11 @@ def main():
             self.guide_search.set_placeholder_text('Search files and explanations…')
             self.guide_search.connect('search-changed', self.filter_guide)
             page.append(self.guide_search)
+            self.guide_mode = Gtk.DropDown.new_from_strings(['All ISO files', 'Project source guide'])
+            self.guide_mode.connect('notify::selected', lambda *_: self.show_guide(None))
+            page.append(self.guide_mode)
+            self.inventory_status = self.label('', 'muted')
+            page.append(self.inventory_status)
             columns = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
             columns.set_vexpand(True)
             columns.set_position(340)
@@ -165,19 +171,35 @@ def main():
             controls.append(self.button('Back to welcome', lambda _: self.pages.set_visible_child_name('welcome')))
             self.source_button = self.button('Show source', self.toggle_guide_source)
             controls.append(self.source_button)
+            self.inventory_previous = self.button('Previous', lambda _: self.inventory_page(-1))
+            self.inventory_next = self.button('Next', lambda _: self.inventory_page(1))
+            controls.append(self.inventory_previous)
+            controls.append(self.inventory_next)
             page.append(controls)
             self.pages.add_named(page, 'guide')
 
         def show_guide(self, _):
             self.pages.set_visible_child_name('guide')
             try:
+                if getattr(self, 'inventory_db', None) is not None:
+                    self.inventory_db.close()
+                    self.inventory_db = None
+                self.inventory_active = self.guide_mode.get_selected() == 0
+                self.inventory_offset = 0
+                if self.inventory_active:
+                    self.inventory_db = sqlite3.connect(f'file:{self.guide_directory / "file-register.sqlite"}?mode=ro', uri=True)
+                    self.inventory_db.row_factory = sqlite3.Row
+                    self.guide_entries = []
+                    self.filter_guide(self.guide_search)
+                    GLib.idle_add(self.guide_ready)
+                    return
                 catalog = json.loads((self.guide_directory / 'file-guide.json').read_text())
                 self.guide_entries = catalog['files']
                 if not self.guide_entries:
                     raise ValueError('The file guide is empty')
                 self.filter_guide(self.guide_search)
                 GLib.idle_add(self.guide_ready)
-            except (OSError, ValueError, KeyError) as error:
+            except (OSError, ValueError, KeyError, sqlite3.Error) as error:
                 self.guide_text.get_buffer().set_text(f'The local guide could not be opened: {error}')
                 self.source_button.set_sensitive(False)
 
@@ -185,22 +207,47 @@ def main():
             try:
                 with open('/dev/ttyS0', 'w') as serial:
                     serial.write('HAFTHIOS_GUIDE_READY\n')
+                    if self.inventory_active:
+                        count = self.inventory_db.execute('SELECT count(*) FROM files').fetchone()[0]
+                        serial.write(f'HAFTHIOS_INVENTORY_READY {count}\n')
             except OSError:
                 pass
             return False
 
-        def filter_guide(self, search):
+        def inventory_page(self, direction):
+            self.inventory_offset = max(0, self.inventory_offset + direction * 100)
+            self.filter_guide(self.guide_search, reset=False)
+
+        def filter_guide(self, search, reset=True):
             query = search.get_text().casefold().strip()
             while self.guide_list.get_first_child() is not None:
                 self.guide_list.remove(self.guide_list.get_first_child())
-            for entry in self.guide_entries:
-                searchable = ' '.join([entry['path'], entry['purpose']] + entry['details']).casefold()
-                if query not in searchable:
+            if getattr(self, 'inventory_active', False):
+                if reset:
+                    self.inventory_offset = 0
+                token = '%' + query.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
+                where = "WHERE path LIKE ? ESCAPE '\\' OR package LIKE ? ESCAPE '\\' OR layer LIKE ? ESCAPE '\\'"
+                parameters = (token, token, token)
+                total = self.inventory_db.execute('SELECT count(*) FROM files ' + where, parameters).fetchone()[0]
+                entries = [dict(row) for row in self.inventory_db.execute(
+                    'SELECT * FROM files ' + where + " ORDER BY CASE layer WHEN 'Live system' THEN 0 ELSE 1 END,layer,path LIMIT 100 OFFSET ?",
+                    parameters + (self.inventory_offset,))]
+                self.inventory_status.set_text(f'{total:,} entries matching · {self.inventory_offset + 1 if total else 0}–{min(total, self.inventory_offset + 100):,} · Search path, package or layer')
+                self.inventory_previous.set_sensitive(self.inventory_offset > 0)
+                self.inventory_next.set_sensitive(self.inventory_offset + 100 < total)
+            else:
+                entries = self.guide_entries
+                self.inventory_status.set_text('Project source explanations and snapshots')
+                self.inventory_previous.set_sensitive(False)
+                self.inventory_next.set_sensitive(False)
+            for entry in entries:
+                searchable = ' '.join([entry['path'], entry['purpose']] + entry.get('details', [])).casefold()
+                if not self.inventory_active and query not in searchable:
                     continue
                 row = Gtk.ListBoxRow()
                 row.article = entry
                 row.set_tooltip_text(entry['path'])
-                label = self.label(entry['path'])
+                label = self.label((entry['layer'] + '\n' if self.inventory_active else '') + entry['path'])
                 label.set_max_width_chars(38)
                 label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
                 label.set_margin_top(10)
@@ -220,12 +267,23 @@ def main():
                 return
             self.guide_source_visible = False
             self.source_button.set_label('Show source')
-            self.source_button.set_sensitive(True)
+            self.source_button.set_sensitive(not self.inventory_active)
             self.display_guide_article(row.article)
 
         def display_guide_article(self, article):
             self.guide_text.set_monospace(self.guide_source_visible)
-            if self.guide_source_visible:
+            if getattr(self, 'inventory_active', False):
+                def value(key):
+                    return str(article[key]) if article[key] is not None and article[key] != '' else 'Not assigned / not applicable'
+                text = (article['layer'] + '  ' + article['path'] + '\n\n'
+                        + '\n'.join(f'{label}: {value(key)}' for label,key in
+                            [('Type','kind'),('Size in bytes','bytes'),('Permissions','mode'),
+                             ('UID','uid'),('GID','gid'),('Link target','target'),
+                             ('Package owner','package'),('Package version','version')])
+                        + '\n\nPACKAGE DESCRIPTION (package metadata)\n' + value('package_description')
+                        + '\n\nFILE ROLE\n' + article['purpose']
+                        + '\n\nEXPLANATION EVIDENCE\n' + article['evidence'])
+            elif self.guide_source_visible:
                 path = Path(article['path'])
                 if path.is_absolute() or '..' in path.parts:
                     text = 'Invalid source path in the guide.'
