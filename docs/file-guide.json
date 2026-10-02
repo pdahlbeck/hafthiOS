@@ -68,7 +68,8 @@
         "Sets Hafþi OS branding and uses SquashFS with xz compression. Adds executable permissions for the two session programs.",
         "Enables NetworkManager in the live image, then invokes mkarchiso to produce out/*.iso.",
         "Writes a SHA256 checksum and size.txt. A marketed 1 GB USB target means less than 1,000,000,000 bytes.",
-        "The temporary build workspace is removed on exit. No selected installation disk is partitioned, formatted or mounted."
+        "The temporary build workspace is removed on exit. No selected installation disk is partitioned, formatted or mounted.",
+        "Installs Plymouth, applies the quiet boot configuration, and masks the default early quit/wait services. The tty1 getty releases Plymouth with retain-splash just before starting the graphical session."
       ]
     },
     {
@@ -102,7 +103,8 @@
         "Waits for HAFTHIOS_GUI_READY in the serial log, then saves the welcome screenshot.",
         "Sends F1 through QEMU to open the offline guide and waits for HAFTHIOS_GUIDE_READY.",
         "Captures diagnostics on failure and terminates the VM when the test ends.",
-        "This is a BIOS VM smoke test. It is not a destructive installation test or a real-hardware certification."
+        "This is a BIOS VM smoke test. It is not a destructive installation test or a real-hardware certification.",
+        "Detects the ship splash in screenshots before GTK starts, checks that frames change, presses Esc to reveal details, then returns to the splash. Also checks the welcome screen and F1 guide as before."
       ]
     },
     {
@@ -116,7 +118,8 @@
       "details": [
         "The empty ExecStart= clears the original getty command. The next ExecStart= launches agetty with --autologin root.",
         "%I expands to the instance name, tty1. --noclear keeps the existing console contents.",
-        "This setting is for the disposable live image. It must not be copied unchanged into a future installed desktop."
+        "This setting is for the disposable live image. It must not be copied unchanged into a future installed desktop.",
+        "ExecStartPre asks Plymouth to quit while retaining its last frame, releasing graphics before Cage starts. A missing or unavailable Plymouth is nonfatal."
       ]
     },
     {
@@ -165,7 +168,8 @@
         "The review screen lists the selected disk and the planned Arch/Niri/Hafþi/Chrome desktop.",
         "Network settings launches nmtui in Foot for the live session. Restart calls systemctl reboot.",
         "The guide is read from /usr/share/doc/hafthios/. A search field filters file names and explanations; each article can show its bundled source snapshot.",
-        "F1 opens the guide. Serial markers are used by the VM test to verify that the UI and guide loaded."
+        "F1 opens the guide. Serial markers are used by the VM test to verify that the UI and guide loaded.",
+        "The guide source viewer recognises binary assets and displays an explanation instead of attempting to show image bytes as UTF-8 text."
       ]
     },
     {
@@ -224,6 +228,89 @@
         "Each article records path, purpose, when it runs, connected files and detailed behavior.",
         "Keep entries consistent with the implementation when changing code. Catalog coverage checks cannot verify the truth of prose automatically.",
         "The catalog is data only. The reader displays its text and does not execute commands from articles."
+      ]
+    },
+    {
+      "path": "scripts/prepare-boot.py",
+      "purpose": "Brands and quiets the BIOS, UEFI and loopback boot entries.",
+      "when": "While assembling the Archiso profile before mkarchiso runs.",
+      "connections": [
+        "scripts/build-iso.sh",
+        "tests/test_boot_profile.py"
+      ],
+      "details": [
+        "Adds quiet splash parameters to the existing Linux entries while retaining the official live-medium discovery and loopback arguments. Hides the short UEFI menu, shortens the BIOS menu, and brands entries as Hafthi OS.",
+        "Fails if the expected boot entries are absent rather than silently producing an image without the splash. Running it twice does not duplicate parameters."
+      ]
+    },
+    {
+      "path": "tests/test_boot_profile.py",
+      "purpose": "Checks that quiet boot preserves the arguments needed to find the live ISO.",
+      "when": "During local validation and the CI check step.",
+      "connections": [
+        "scripts/prepare-boot.py"
+      ],
+      "details": [
+        "Uses representative BIOS, UEFI and loopback entries. Verifies discovery arguments survive, quiet parameters appear once, and missing baseline entries fail clearly."
+      ]
+    },
+    {
+      "path": "live/etc/mkinitcpio.conf.d/archiso.conf",
+      "purpose": "Starts graphics and Plymouth in the live image initramfs.",
+      "when": "Before the main live filesystem is mounted.",
+      "connections": [
+        "scripts/build-iso.sh",
+        "live/etc/plymouth/plymouthd.conf"
+      ],
+      "details": [
+        "Keeps the official Archiso discovery hooks and adds kms and plymouth after udev. The kms hook includes graphics drivers; Plymouth draws the ship while the live system starts."
+      ]
+    },
+    {
+      "path": "live/etc/plymouth/plymouthd.conf",
+      "purpose": "Selects the Hafþi OS splash without a display delay.",
+      "when": "When Plymouth starts in the initramfs and during live boot.",
+      "connections": [
+        "live/usr/share/plymouth/themes/hafthios/hafthios.plymouth"
+      ],
+      "details": [
+        "Theme=hafthios selects the project theme. ShowDelay=0 shows it as soon as the graphics device becomes available."
+      ]
+    },
+    {
+      "path": "live/usr/share/plymouth/themes/hafthios/hafthios.plymouth",
+      "purpose": "Registers the ship splash with the Plymouth script renderer.",
+      "when": "When Plymouth loads the selected theme.",
+      "connections": [
+        "live/usr/share/plymouth/themes/hafthios/hafthios.script",
+        "live/usr/share/plymouth/themes/hafthios/ship.png"
+      ],
+      "details": [
+        "Points to the script and its artwork directory using paths available in the live image and initramfs."
+      ]
+    },
+    {
+      "path": "live/usr/share/plymouth/themes/hafthios/hafthios.script",
+      "purpose": "Animates the supplied ship artwork on a dark boot screen.",
+      "when": "From early live boot until the graphical session takes over.",
+      "connections": [
+        "live/usr/share/plymouth/themes/hafthios/ship.png",
+        "live/usr/share/plymouth/themes/hafthios/hafthios.plymouth"
+      ],
+      "details": [
+        "Scales the image proportionally to fit the screen. A refresh callback moves it gently sideways and vertically, suggesting a quiet voyage. The original artwork stays intact.",
+        "Shows an Esc hint. Plymouth itself handles Esc to switch between the graphical theme and boot details; this script does not intercept or discard logs."
+      ]
+    },
+    {
+      "path": "live/usr/share/plymouth/themes/hafthios/ship.png",
+      "purpose": "Contains the user-supplied white Viking ship artwork on a dark background.",
+      "when": "Loaded by the Plymouth theme during startup.",
+      "connections": [
+        "live/usr/share/plymouth/themes/hafthios/hafthios.script"
+      ],
+      "details": [
+        "A PNG format conversion of the supplied JPEG, preserving its decoded pixels and proportions. This is a binary image, not a text source file."
       ]
     }
   ]

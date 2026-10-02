@@ -232,6 +232,8 @@ def main():
                 else:
                     try:
                         text = (self.guide_directory / 'sources' / path).read_text()
+                    except UnicodeDecodeError:
+                        text = 'This is a binary image asset. See the explanation for its purpose and installation path.'
                     except OSError as error:
                         text = f'The bundled source could not be read: {error}'
             else:

@@ -9,7 +9,8 @@ profile="$workspace/profile"
 cp -a /usr/share/archiso/configs/baseline "$profile"
 cp -a "$root/live/." "$profile/airootfs/"
 python3 "$root/scripts/build-guide.py" "$profile/airootfs/usr/share/doc/hafthios"
-# Copy the current baseline boot files; adjust only image branding/compression.
+python3 "$root/scripts/prepare-boot.py" "$profile"
+# Preserve the official boot paths and image compression.
 cat >> "$profile/profiledef.sh" <<'PROFILE'
 iso_name="hafthios-prototype"
 iso_label="HAFTHIOS"
@@ -28,6 +29,7 @@ linux
 mkinitcpio
 mkinitcpio-archiso
 syslinux
+plymouth
 cage
 foot
 gtk4
@@ -41,6 +43,9 @@ PACKAGES
 # Use the normal Arch repositories and their signature checks from the baseline.
 mkdir -p "$profile/airootfs/etc/systemd/system/multi-user.target.wants"
 ln -sf /usr/lib/systemd/system/NetworkManager.service "$profile/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
+# Getty owns the splash handoff; prevent the default early quit/wait pair.
+ln -sf /dev/null "$profile/airootfs/etc/systemd/system/plymouth-quit.service"
+ln -sf /dev/null "$profile/airootfs/etc/systemd/system/plymouth-quit-wait.service"
 mkdir -p "$root/out"
 mkarchiso -v -w "$workspace/work" -o "$root/out" "$profile"
 python3 - "$root/out" <<'PY'

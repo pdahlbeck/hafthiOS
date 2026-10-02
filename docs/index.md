@@ -25,3 +25,7 @@ The ISO build checks that every project file has an entry and bundles source cop
 `autologin.conf` starts a live tty1 login → `.bash_profile` starts `hafthios-session` → Cage launches `hafthios-welcome` → the Guide button reads the local documentation bundle.
 
 The build chain is `build.yml` → `build-iso.sh` → `build-guide.py` and Archiso → `test-boot.py` → downloadable ISO and VM diagnostics.
+
+## Quiet startup
+
+The live image shows an animated ship splash during OS startup. Press **Esc** to toggle boot details, and press it again to return to the ship. Firmware screens before the OS starts remain controlled by the computer. The welcome screen and offline guide remain available after boot.

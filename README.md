@@ -40,3 +40,7 @@ Output is in `out/`. The script copies Archiso's baseline profile into a tempora
 - Test real hardware and minimize the measured ISO size.
 
 Hafþi OS is an independent project, not an official Arch Linux distribution. Individual bundled packages retain their own licenses.
+
+## Quiet startup
+
+The live image shows an animated ship splash during OS startup. Press **Esc** to toggle boot details, and press it again to return to the ship. Firmware screens before the OS starts remain controlled by the computer. The welcome screen and offline guide remain available after boot.

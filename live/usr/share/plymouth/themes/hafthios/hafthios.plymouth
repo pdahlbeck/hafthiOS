@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Hafþi OS
+Description=A quiet voyage into Hafþi OS. Press Esc for boot details.
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/hafthios
+ScriptFile=/usr/share/plymouth/themes/hafthios/hafthios.script
