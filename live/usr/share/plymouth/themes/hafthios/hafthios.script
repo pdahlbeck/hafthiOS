@@ -8,7 +8,7 @@ ship.image = ship.original.Scale(ship.width, ship.width * ship.original.GetHeigh
 ship.sprite = Sprite(ship.image);
 ship.phase = 0;
 
-hint.image = Image.Text("Esc · Show boot details", 0.55, 0.55, 0.55);
+hint.image = Image.Text("Esc - Show boot details", 0.55, 0.55, 0.55);
 hint.sprite = Sprite(hint.image);
 hint.sprite.SetPosition(Window.GetX() + (Window.GetWidth() - hint.image.GetWidth()) / 2,
                         Window.GetY() + Window.GetHeight() * 0.90, 10);

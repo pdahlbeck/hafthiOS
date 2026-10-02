@@ -6,7 +6,7 @@ import socket
 import subprocess
 import tempfile
 import time
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageFilter
 
 def qmp_request(sock_path, name, arguments):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
@@ -31,6 +31,24 @@ def qmp_request(sock_path, name, arguments):
 
 def capture_screen(sock_path, filename):
     return qmp_request(sock_path, 'screendump', {'filename': str(filename)})
+
+def ship_visible(frame):
+    original = Image.open('live/usr/share/plymouth/themes/hafthios/ship.png').convert('RGB')
+    width = int(min(frame.width * 0.90, frame.height * 1.15, original.width))
+    artwork = original.resize((width, int(width * original.height / original.width)))
+    samples = [(x, y) for y in range(artwork.height) for x in range(artwork.width)
+               if min(artwork.getpixel((x, y))) > 210][::30]
+    # Match the actual line artwork, with tolerance for scaling and its motion.
+    expanded = frame.convert('L').filter(ImageFilter.MaxFilter(15))
+    left = (frame.width - artwork.width) // 2
+    top = (frame.height - artwork.height) // 2
+    for dx in (-24, -12, 0, 12, 24):
+        for dy in (-6, 0, 6):
+            matches = sum(expanded.getpixel((left + x + dx, top + y + dy)) > 180
+                          for x, y in samples)
+            if samples and matches / len(samples) > 0.75:
+                return True
+    return False
 
 out = pathlib.Path('out').resolve()
 iso = max(out.glob('*.iso'), key=lambda p: p.stat().st_mtime)
@@ -60,10 +78,7 @@ with tempfile.TemporaryDirectory() as tmp:
             if sock_path.exists():
                 capture_screen(sock_path, out / 'splash-probe.ppm')
                 frame = Image.open(out / 'splash-probe.ppm').convert('RGB')
-                center = frame.crop((frame.width * 0.3, frame.height * 0.2, frame.width * 0.7, frame.height * 0.75))
-                bright = sum(min(pixel) > 180 for pixel in center.getdata())
-                dark = sum(max(pixel) < 40 for pixel in frame.getdata())
-                if bright > 1200 and dark > frame.width * frame.height * 0.85:
+                if ship_visible(frame):
                     frame.save(out / 'splash-screen.png')
                     splash_seen = True
                     break
@@ -79,9 +94,13 @@ with tempfile.TemporaryDirectory() as tmp:
         time.sleep(1)
         capture_screen(sock_path, out / 'boot-details.ppm')
         details = Image.open(out / 'boot-details.ppm').convert('RGB')
-        if ImageChops.difference(moved, details).getbbox() is None:
-            raise RuntimeError('Esc did not change the splash to boot details')
+        if ship_visible(details):
+            raise RuntimeError('Esc did not replace the ship with boot details')
         qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'esc'}]})
+        time.sleep(1)
+        capture_screen(sock_path, out / 'splash-return.ppm')
+        if not ship_visible(Image.open(out / 'splash-return.ppm').convert('RGB')):
+            raise RuntimeError('The second Esc did not restore the ship')
         deadline = time.monotonic() + 360
         while time.monotonic() < deadline:
             if process.poll() is not None:

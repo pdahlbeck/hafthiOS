@@ -104,7 +104,7 @@
         "Sends F1 through QEMU to open the offline guide and waits for HAFTHIOS_GUIDE_READY.",
         "Captures diagnostics on failure and terminates the VM when the test ends.",
         "This is a BIOS VM smoke test. It is not a destructive installation test or a real-hardware certification.",
-        "Detects the ship splash in screenshots before GTK starts, checks that frames change, presses Esc to reveal details, then returns to the splash. Also checks the welcome screen and F1 guide as before."
+        "Detects the ship splash in screenshots before GTK starts, checks that frames change, presses Esc and verifies the ship artwork disappears for details, then verifies the second Esc restores the ship. Also checks the welcome screen and F1 guide as before."
       ]
     },
     {
@@ -263,7 +263,7 @@
         "live/etc/plymouth/plymouthd.conf"
       ],
       "details": [
-        "Keeps the official Archiso discovery hooks and adds kms and plymouth after udev. The kms hook includes graphics drivers; Plymouth draws the ship while the live system starts."
+        "Keeps the official Archiso discovery hooks and adds kms, keyboard and plymouth after udev. The kms hook includes graphics drivers and the keyboard hook makes Esc available before the live filesystem is mounted; Plymouth draws the ship while the live system starts."
       ]
     },
     {
