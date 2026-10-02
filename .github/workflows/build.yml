@@ -20,7 +20,7 @@ jobs:
         run: |
           docker run --rm --privileged \
             -v "$PWD:/project" -w /project archlinux:base \
-            bash -lc 'pacman -Syu --noconfirm archiso grub python mtools && bash scripts/build-iso.sh'
+            bash -lc 'pacman -Syu --noconfirm archiso grub python mtools mkinitcpio && bash scripts/build-iso.sh'
           sudo chown -R "$(id -u):$(id -g)" out
       - name: Boot graphical prototype in a disposable VM
         run: |
