@@ -70,7 +70,8 @@
         "Writes a SHA256 checksum and size.txt. A marketed 1 GB USB target means less than 1,000,000,000 bytes.",
         "The temporary build workspace is removed on exit. No selected installation disk is partitioned, formatted or mounted.",
         "Installs Plymouth, applies the quiet boot configuration, and masks the default early quit/wait services. The tty1 getty releases Plymouth with retain-splash just before starting the graphical session.",
-        "Packages and validates the full ISO file register with package-inventory.py before calculating the final ISO checksum."
+        "Packages and validates the full ISO file register with package-inventory.py before calculating the final ISO checksum.",
+        "Includes common Intel, AMD, Atheros, Realtek and Broadcom firmware, Wi-Fi authentication and PipeWire audio. Hardware support still requires real-device testing."
       ]
     },
     {
@@ -93,20 +94,22 @@
     },
     {
       "path": "scripts/test-boot.py",
-      "purpose": "Boots the ISO in QEMU, checks that the welcome screen and offline guide open, and saves screenshots and logs.",
+      "purpose": "Boots the ISO, validates the welcome and complete guide, then opens Niri, Hafþi and Google Chrome in a disposable VM.",
       "when": "After a successful image build in GitHub Actions.",
       "connections": [
         "live/usr/local/bin/hafthios-welcome",
         ".github/workflows/build.yml"
       ],
       "details": [
-        "Uses software CPU emulation, 2 GB RAM, a virtual graphics device and a disposable 16 GiB sparse disk.",
+        "Uses CPU emulation, 4 GB RAM, accelerated VirtIO graphics backed by host Mesa, and a disposable 16 GiB sparse disk.",
         "Waits for HAFTHIOS_GUI_READY in the serial log, then saves the welcome screenshot.",
         "Sends F1 through QEMU to open the offline guide and waits for HAFTHIOS_GUIDE_READY.",
         "Captures diagnostics on failure and terminates the VM when the test ends.",
         "This is a BIOS VM smoke test. It is not a destructive installation test or a real-hardware certification.",
         "Detects the ship splash in screenshots before GTK starts, checks that frames change, presses Esc and verifies the ship artwork disappears for details, then verifies the second Esc restores the ship. Also checks the welcome screen and F1 guide as before.",
-        "Requires the complete register ready marker and more than 1,000 filesystem entries when the guide opens."
+        "Requires the complete register ready marker and more than 1,000 filesystem entries when the guide opens.",
+        "Presses F2 to enter Niri, requires the exact Hafþi application ID in the compositor window list, opens Chrome setup through Super+B, and waits for the browser window after an actual download.",
+        "Captures the actual SDL window inside Xvfb, because OpenGL scanouts may have no CPU image for QMP screendump. QMP remains responsible for keyboard input."
       ]
     },
     {

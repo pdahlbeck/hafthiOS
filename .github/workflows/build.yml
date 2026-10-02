@@ -25,8 +25,8 @@ jobs:
       - name: Boot graphical prototype in a disposable VM
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-system-gui python3-pil xvfb xauth libgl1-mesa-dri mesa-utils
-          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a python3 scripts/test-boot.py
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-system-gui python3-pil xvfb xauth xdotool libgl1-mesa-dri mesa-utils
+          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1920x1200x24" python3 scripts/test-boot.py
       - name: Report ISO size
         run: cat out/size.txt
       - name: Upload complete file register

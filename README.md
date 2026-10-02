@@ -4,7 +4,7 @@ A minimal Arch Linux desktop built around Hafþi, Wayland and Chrome.
 
 ## First prototype
 
-This is an **x86_64 live USB prototype**, not a finished distribution. Boot into a graphical welcome screen, click **Install Hafþi OS**, choose a disk, and review the proposed desktop. The prototype **does not partition, format or install to any disk**. Its review screen explicitly marks installation as unavailable. This lets us test the live image and interface before adding a destructive installer backend.
+This is an **x86_64 live USB prototype**, not a finished distribution. Boot into a graphical welcome screen and click **Try the desktop** to use Niri and Hafþi. **Preview installation** lets you choose a disk and review the proposed system. The prototype **does not partition, format or install to any disk**. Its review screen explicitly marks installation as unavailable. This lets us test the live image and interface before adding a destructive installer backend.
 
 Click **Try the desktop** (or press **F2**) to enter Niri with Hafþi ready to use. Google Chrome is downloaded directly from Google on first use; connect to the internet and click **Open Google Chrome**. Chrome is not redistributed inside the ISO. The ordinary `hafthi` live user keeps Chrome’s sandbox enabled. Everything in the live home is discarded on restart.
 
@@ -64,4 +64,4 @@ Choose **Project source guide** for the separate, detailed source explanations a
 - **Super + Left / Right**: switch columns.
 - **Super + Q**: close the focused window.
 
-Use at least **4 GB RAM** for the desktop and first-use browser download. The live writable layer can use up to half the RAM. Niri requires accelerated graphics, including virtual 3D acceleration in a VM. The welcome screen can run without it. The live session includes Fish and normal Arch package tools; it does not install anything onto a target disk. Hafþi is built from a pinned source commit in `scripts/build-hafthi.sh` and retains its MIT license.
+Use at least **4 GB RAM** for the desktop and first-use browser download. The live writable layer can use up to half the RAM. Niri requires accelerated graphics, including virtual 3D acceleration in a VM. The welcome screen can run without it. The live session includes Fish, audio services, common Intel/AMD graphics and Wi-Fi firmware, and normal Arch package tools; it does not install anything onto a target disk. Hafþi is built from a pinned source commit in `scripts/build-hafthi.sh` and retains its MIT license.

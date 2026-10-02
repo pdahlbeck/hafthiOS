@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Boot the ISO with TCG and a disposable disk; check GTK's ready marker."""
 import json
+import os
 import pathlib
 import socket
 import subprocess
@@ -15,7 +16,7 @@ def window_present(text, app_id):
             except (ValueError, AttributeError):
                 continue
     return False
-from PIL import Image, ImageChops, ImageFilter
+from PIL import Image, ImageChops, ImageFilter, ImageGrab
 
 def qmp_request(sock_path, name, arguments):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
@@ -39,7 +40,23 @@ def qmp_request(sock_path, name, arguments):
         return command(name, arguments)
 
 def capture_screen(sock_path, filename):
-    return qmp_request(sock_path, 'screendump', {'filename': str(filename)})
+    # GL scanouts may have no CPU surface for QMP screendump. Capture the actual
+    # SDL window from Xvfb instead, including frames rendered by VirGL.
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        result = subprocess.run(['xdotool', 'search', '--onlyvisible', '--pid', str(process.pid)], capture_output=True, text=True)
+        if result.returncode == 0 and result.stdout.strip():
+            window = result.stdout.splitlines()[0]
+            geometry = subprocess.check_output(['xdotool', 'getwindowgeometry', '--shell', window], text=True)
+            values = dict(line.split('=', 1) for line in geometry.splitlines() if '=' in line)
+            x, y, width, height = [int(values[k]) for k in ('X', 'Y', 'WIDTH', 'HEIGHT')]
+            frame = ImageGrab.grab(bbox=(x, y, x + width, y + height), xdisplay=os.environ['DISPLAY'])
+            frame.save(filename)
+            return
+        if process.poll() is not None:
+            raise RuntimeError('QEMU exited before a display window appeared')
+        time.sleep(0.5)
+    raise RuntimeError('QEMU SDL display window did not appear')
 
 def ship_visible(frame):
     original = Image.open('live/usr/share/plymouth/themes/hafthios/ship.png').convert('RGB')

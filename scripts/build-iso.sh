@@ -31,6 +31,7 @@ file_permissions+=(
 PROFILE
 cat > "$profile/packages.x86_64" <<'PACKAGES'
 base
+ca-certificates
 linux
 mkinitcpio
 mkinitcpio-archiso
@@ -43,6 +44,15 @@ python
 python-gobject
 mesa
 networkmanager
+wpa_supplicant
+linux-firmware-intel
+linux-firmware-amdgpu
+linux-firmware-atheros
+linux-firmware-realtek
+linux-firmware-broadcom
+pipewire
+pipewire-pulse
+wireplumber
 polkit
 ttf-dejavu
 niri
