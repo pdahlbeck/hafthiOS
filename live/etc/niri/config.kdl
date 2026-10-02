@@ -1,0 +1,34 @@
+// Minimal Hafþi OS live desktop. Super is the Windows / Command key.
+input {
+    keyboard { xkb { layout "us"; }; }
+    touchpad { tap; natural-scroll; }
+}
+layout {
+    gaps 16
+    background-color "#101e28"
+    default-column-width { proportion 0.60; }
+    focus-ring { width 2; active-color "#76d1c7"; inactive-color "#344954"; }
+}
+spawn-at-startup "hafthios-welcome" "--desktop"
+spawn-at-startup "hafthi"
+prefer-no-csd
+window-rule {
+    match app-id="org.hafthios.Welcome"
+    default-column-width { fixed 440; }
+}
+binds {
+    Mod+Return { spawn "hafthi"; }
+    Mod+B { spawn "hafthios-chrome"; }
+    Mod+Space { spawn "hafthios-welcome" "--desktop"; }
+    Mod+G { spawn "hafthios-welcome" "--guide"; }
+    Mod+Q { close-window; }
+    Mod+Left { focus-column-left; }
+    Mod+Right { focus-column-right; }
+    Mod+Up { focus-window-up; }
+    Mod+Down { focus-window-down; }
+    Mod+Shift+Left { move-column-left; }
+    Mod+Shift+Right { move-column-right; }
+    Mod+F { maximize-column; }
+    Mod+Shift+F { fullscreen-window; }
+    Mod+Shift+E { quit; }
+}

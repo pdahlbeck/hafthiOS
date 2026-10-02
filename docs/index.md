@@ -22,7 +22,7 @@ The ISO build checks that every project file has an entry and bundles source cop
 
 ## Follow the startup chain
 
-`autologin.conf` starts a live tty1 login → `.bash_profile` starts `hafthios-session` → Cage launches `hafthios-welcome` → the Guide button reads the local documentation bundle.
+`autologin.conf` starts a live tty1 login → `.bash_profile` starts `hafthios-session` → Cage launches `hafthios-welcome` → the Guide button reads the local documentation bundle. **Try the desktop** exits Cage and starts the Niri user session, which launches Hafþi and desktop controls. The tty1 autologin user is `hafthi`.
 
 The build chain is `build.yml` → `build-iso.sh` → `build-guide.py` and Archiso → `test-boot.py` → downloadable ISO and VM diagnostics.
 

@@ -6,6 +6,15 @@ import socket
 import subprocess
 import tempfile
 import time
+
+def window_present(text, app_id):
+    for line in reversed(text.splitlines()):
+        if line.startswith('HAFTHIOS_DESKTOP_READY '):
+            try:
+                return any(w.get('app_id', '').lower() == app_id for w in json.loads(line.split(' ', 1)[1]))
+            except (ValueError, AttributeError):
+                continue
+    return False
 from PIL import Image, ImageChops, ImageFilter
 
 def qmp_request(sock_path, name, arguments):
@@ -60,10 +69,10 @@ with tempfile.TemporaryDirectory() as tmp:
     sock_path = tmp / 'qmp.sock'
     serial_path = out / 'boot-serial.log'
     process = subprocess.Popen([
-        'qemu-system-x86_64', '-accel', 'tcg', '-m', '2048', '-smp', '2',
+        'qemu-system-x86_64', '-accel', 'tcg', '-m', '4096', '-smp', '2',
         '-cpu', 'max', '-cdrom', str(iso), '-boot', 'd',
         '-drive', f'file={disk},format=raw,if=virtio',
-        '-vga', 'none', '-device', 'virtio-vga', '-display', 'none',
+        '-vga', 'none', '-device', 'virtio-vga-gl', '-display', 'sdl,gl=on',
         '-serial', f'file:{serial_path}', '-monitor', 'none',
         '-qmp', f'unix:{sock_path},server=on,wait=off', '-no-reboot',
     ], stdout=subprocess.DEVNULL, stderr=open(out / 'qemu.log', 'w'))
@@ -135,6 +144,30 @@ with tempfile.TemporaryDirectory() as tmp:
             raise RuntimeError('ISO register is unexpectedly small')
         time.sleep(3)
         capture_screen(sock_path, out / 'guide-screen.ppm')
+        qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'f2'}]})
+        deadline = time.monotonic() + 180
+        while time.monotonic() < deadline:
+            text = serial_path.read_text(errors='replace')
+            if window_present(text, 'se.dahlbeck.hafthi'):
+                break
+            time.sleep(3)
+        else:
+            raise RuntimeError('Niri desktop and Hafthi window did not become ready')
+        time.sleep(5)
+        capture_screen(sock_path, out / 'desktop-screen.ppm')
+        qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'meta_l'}, {'type': 'qcode', 'data': 'b'}]})
+        time.sleep(10)
+        qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'ret'}]})
+        deadline = time.monotonic() + 240
+        while time.monotonic() < deadline:
+            text = serial_path.read_text(errors='replace')
+            if window_present(text, 'google-chrome'):
+                break
+            time.sleep(3)
+        else:
+            raise RuntimeError('Google Chrome window did not open after download')
+        time.sleep(10)
+        capture_screen(sock_path, out / 'chrome-screen.ppm')
         print('BIOS VM boot passed: animated ship, Esc details, welcome screen and offline guide reached.')
     finally:
         if process.poll() is None and not (out / 'boot-screen.ppm').exists():

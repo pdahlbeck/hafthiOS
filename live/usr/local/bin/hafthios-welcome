@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Read-only installer UI prototype. No target-disk writes are implemented."""
+import os
 import json
 import sqlite3
 import subprocess
@@ -57,18 +58,22 @@ def main():
                 Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
             self.window = Gtk.ApplicationWindow(application=self, title='Hafþi OS')
             self.window.set_default_size(960, 680)
-            self.window.fullscreen()
+            if '--desktop' not in sys.argv:
+                self.window.fullscreen()
+            else:
+                self.window.set_default_size(440, 680)
             root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=24)
             for side in ('top', 'bottom', 'start', 'end'):
                 getattr(root, 'set_margin_' + side)(48)
             self.window.set_child(root)
-            root.append(self.label('HAFÞI OS  /  PROTOTYPE 01', 'brand'))
+            root.append(self.label('HAFÞI OS  /  LIVE DESKTOP', 'brand'))
             self.pages = Gtk.Stack()
             self.pages.set_vexpand(True)
             self.pages.set_vhomogeneous(False)
             self.pages.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
             root.append(self.pages)
             self.build_welcome()
+            self.build_desktop()
             self.build_disk_page()
             self.build_review_page()
             self.build_guide_page()
@@ -76,6 +81,9 @@ def main():
             keys.connect('key-pressed', self.guide_key)
             self.window.add_controller(keys)
             root.append(self.label('Prototype preview · Your disks will not be changed.', 'muted'))
+            if '--desktop' in sys.argv:
+                self.pages.set_visible_child_name('desktop')
+                GLib.timeout_add_seconds(2, self.desktop_ready)
             if '--guide' in sys.argv:
                 self.show_guide(None)
             self.window.present()
@@ -116,14 +124,40 @@ def main():
         def build_welcome(self):
             page = self.page('welcome', 'A quiet desktop.\nA powerful terminal.',
                              'Arch Linux, Wayland and Hafþi. A simpler place to start.')
-            note = self.label('Try the installation screens. Disk installation is not enabled in this first prototype.', 'notice')
+            note = self.label('Try the desktop from USB. Disk installation is still a preview.', 'notice')
             page.append(note)
-            page.append(self.button('Install Hafþi OS', self.show_disks, True))
+            page.append(self.button('Try the desktop', self.try_desktop, True))
+            page.append(self.button('Preview installation', self.show_disks))
             page.append(self.button('Hafþi OS Guide', self.show_guide))
             page.append(self.button('Network settings', self.network))
             page.append(self.button('Restart', self.restart))
 
+        def try_desktop(self, _):
+            Path(os.environ['XDG_RUNTIME_DIR'], 'hafthios-try-desktop').touch()
+            self.quit()
+
+        def build_desktop(self):
+            page = self.page('desktop', 'Welcome aboard.', 'Your Hafþi OS live desktop.')
+            page.append(self.button('Open Hafþi', lambda _: subprocess.Popen(['hafthi']), True))
+            page.append(self.button('Open Google Chrome', lambda _: subprocess.Popen(['hafthios-chrome'])))
+            page.append(self.button('Hafþi OS Guide', self.show_guide))
+            page.append(self.button('Network settings', self.network))
+            page.append(self.label('Super + Enter  ·  Terminal\nSuper + B  ·  Browser\nSuper + G  ·  File guide\nSuper + ← / →  ·  Switch windows\nSuper + Q  ·  Close window', 'notice'))
+            page.append(self.button('Restart', self.restart))
+
+        def desktop_ready(self):
+            try:
+                result = subprocess.run(['niri', 'msg', '--json', 'windows'], capture_output=True, text=True, timeout=5, check=True)
+                with open('/dev/ttyS0', 'w') as serial:
+                    serial.write('HAFTHIOS_DESKTOP_READY ' + result.stdout + '\n')
+            except (OSError, subprocess.SubprocessError):
+                pass
+            return True
+
         def guide_key(self, controller, keyval, keycode, state):
+            if keyval == Gdk.KEY_F2 and '--desktop' not in sys.argv:
+                self.try_desktop(None)
+                return True
             if keyval == Gdk.KEY_F1:
                 self.show_guide(None)
                 return True
@@ -168,7 +202,7 @@ def main():
             columns.set_end_child(reading)
             page.append(columns)
             controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
-            controls.append(self.button('Back to welcome', lambda _: self.pages.set_visible_child_name('welcome')))
+            controls.append(self.button('Back to welcome', lambda _: self.pages.set_visible_child_name('desktop' if '--desktop' in sys.argv else 'welcome')))
             self.source_button = self.button('Show source', self.toggle_guide_source)
             controls.append(self.source_button)
             self.inventory_previous = self.button('Previous', lambda _: self.inventory_page(-1))
@@ -318,7 +352,7 @@ def main():
             page.append(self.disk_status)
             self.continue_button = self.button('Review installation', self.review, True)
             page.append(self.continue_button)
-            page.append(self.button('Back', lambda _: self.pages.set_visible_child_name('welcome')))
+            page.append(self.button('Back', lambda _: self.pages.set_visible_child_name('desktop' if '--desktop' in sys.argv else 'welcome')))
 
         def show_disks(self, _):
             self.pages.set_visible_child_name('disks')
@@ -341,7 +375,7 @@ def main():
             page.append(self.summary)
             page.append(self.label('Installation is unavailable in Prototype 01.\nThis preview has not changed your disk.', 'muted'))
             page.append(self.button('Back', lambda _: self.pages.set_visible_child_name('disks')))
-            page.append(self.button('Return to welcome', lambda _: self.pages.set_visible_child_name('welcome'), True))
+            page.append(self.button('Return to welcome', lambda _: self.pages.set_visible_child_name('desktop' if '--desktop' in sys.argv else 'welcome'), True))
 
         def review(self, _):
             index = self.disk_choice.get_selected()

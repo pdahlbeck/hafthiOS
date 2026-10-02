@@ -1,0 +1,2 @@
+# Disposable live session only. Do not copy this policy into an installed system.
+%wheel ALL=(ALL:ALL) NOPASSWD: ALL

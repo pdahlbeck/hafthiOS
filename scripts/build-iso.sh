@@ -8,6 +8,7 @@ trap 'rm -rf -- "$workspace"' EXIT
 profile="$workspace/profile"
 cp -a /usr/share/archiso/configs/baseline "$profile"
 cp -a "$root/live/." "$profile/airootfs/"
+bash "$root/scripts/build-hafthi.sh" "$profile/airootfs"
 python3 "$root/scripts/build-guide.py" "$profile/airootfs/usr/share/doc/hafthios"
 python3 "$root/scripts/prepare-boot.py" "$profile"
 # Preserve the official boot paths and image compression.
@@ -19,6 +20,11 @@ iso_application="Hafþi OS graphical installer prototype"
 airootfs_image_type="squashfs"
 airootfs_image_tool_options=(-comp xz -b 1M)
 file_permissions+=(
+  ["/usr/local/bin/hafthi"]="0:0:755"
+  ["/usr/local/libexec/hafthi/g"]="0:0:755"
+  ["/usr/local/bin/hafthios-chrome"]="0:0:755"
+  ["/root/customize_airootfs.sh"]="0:0:755"
+  ["/etc/sudoers.d/hafthios-live"]="0:0:440"
   ["/usr/local/bin/hafthios-session"]="0:0:755"
   ["/usr/local/bin/hafthios-welcome"]="0:0:755"
 )
@@ -39,6 +45,21 @@ mesa
 networkmanager
 polkit
 ttf-dejavu
+niri
+fish
+sudo
+libarchive
+nss
+alsa-lib
+gtk3
+libcups
+libxss
+vulkan-icd-loader
+vulkan-swrast
+vulkan-intel
+vulkan-radeon
+xdg-desktop-portal-gtk
+xdg-desktop-portal-gnome
 PACKAGES
 # Use the normal Arch repositories and their signature checks from the baseline.
 mkdir -p "$profile/airootfs/etc/systemd/system/multi-user.target.wants"

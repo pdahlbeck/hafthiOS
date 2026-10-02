@@ -6,7 +6,7 @@ A minimal Arch Linux desktop built around Hafþi, Wayland and Chrome.
 
 This is an **x86_64 live USB prototype**, not a finished distribution. Boot into a graphical welcome screen, click **Install Hafþi OS**, choose a disk, and review the proposed desktop. The prototype **does not partition, format or install to any disk**. Its review screen explicitly marks installation as unavailable. This lets us test the live image and interface before adding a destructive installer backend.
 
-The planned installed desktop is Arch Linux with Niri, Hafþi and Google Chrome. The prototype live image uses Cage and GTK to show only the installer. Hafþi and Chrome are not included in this first live image.
+Click **Try the desktop** (or press **F2**) to enter Niri with Hafþi ready to use. Google Chrome is downloaded directly from Google on first use; connect to the internet and click **Open Google Chrome**. Chrome is not redistributed inside the ISO. The ordinary `hafthi` live user keeps Chrome’s sandbox enabled. Everything in the live home is discarded on restart.
 
 ## Offline file guide
 
@@ -18,14 +18,14 @@ The guide is bundled at `/usr/share/doc/hafthios/` in the live image. The future
 
 Open this repository's **Actions → Build prototype ISO**, choose a successful run, and download **hafthiOS-prototype** while signed in to GitHub. Extract the artifact archive to find the `.iso`, its SHA256 file, and size report.
 
-First test in a virtual machine: select the ISO as an optical boot image, give the VM 2 GB RAM and a disposable virtual disk. Use an **x86_64 VM**; Apple Silicon requires x86 emulation for this image. Native ARM images are not available yet. Both BIOS and UEFI boot files are built, but boot compatibility must be tested.
+First test in a virtual machine: select the ISO as an optical boot image, enable 3D graphics acceleration, give the VM 4 GB RAM and a disposable virtual disk. Use an **x86_64 VM**; Apple Silicon requires x86 emulation for this image. Native ARM images are not available yet. Both BIOS and UEFI boot files are built, but boot compatibility must be tested.
 
 The ISO size is measured on each build. Fitting a marketed 1 GB USB means staying below **1,000,000,000 bytes**; this is a target, not a promise. The live session has no persistence. Wireless, graphics hardware and Secure Boot compatibility are not validated yet.
 
 ## Build on Arch Linux
 
 ```sh
-sudo pacman -S --needed archiso grub python
+sudo pacman -S --needed archiso grub python mtools mkinitcpio rust git pkgconf wayland libxkbcommon systemd-libs alsa-lib
 sudo bash scripts/build-iso.sh
 ```
 
@@ -36,7 +36,7 @@ Output is in `out/`. The script copies Archiso's baseline profile into a tempora
 - Boot and validate the graphical prototype in a VM.
 - Network setup, language and keyboard selection.
 - A reviewed installer backend with explicit disk-erasure confirmation.
-- Niri session, packaged Hafþi, and separately installed Google Chrome.
+- Test the Niri desktop, bundled Hafþi and first-use Chrome download on real hardware.
 - Test real hardware and minimize the measured ISO size.
 
 Hafþi OS is an independent project, not an official Arch Linux distribution. Individual bundled packages retain their own licenses.
@@ -54,3 +54,14 @@ Each record includes its layer, path, type, byte size where applicable, permissi
 The local database is `/usr/share/doc/hafthios/file-register.sqlite`. A copy is also at `/hafthios-file-register.sqlite` in the ISO filesystem. The build exports `hafthios-file-register.csv` and `hafthios-file-register.sqlite` next to the ISO, with final container sizes. The embedded register leaves the final compressed live-image size unspecified because that container is generated after embedding the register. Every embedded layer/path/type is compared against a fresh extraction of the final ISO.
 
 Choose **Project source guide** for the separate, detailed source explanations and snapshots.
+
+## Live desktop shortcuts
+
+- **Super + Enter**: open Hafþi.
+- **Super + B**: open or download Google Chrome.
+- **Super + Space**: open the desktop controls.
+- **Super + G**: open the local file guide.
+- **Super + Left / Right**: switch columns.
+- **Super + Q**: close the focused window.
+
+Niri requires accelerated graphics, including virtual 3D acceleration in a VM. The welcome screen can run without it. The live session includes Fish and normal Arch package tools; it does not install anything onto a target disk. Hafþi is built from a pinned source commit in `scripts/build-hafthi.sh` and retains its MIT license.

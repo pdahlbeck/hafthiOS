@@ -8,7 +8,7 @@ permissions:
 jobs:
   iso:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Check prototype
@@ -20,13 +20,13 @@ jobs:
         run: |
           docker run --rm --privileged \
             -v "$PWD:/project" -w /project archlinux:base \
-            bash -lc 'pacman -Syu --noconfirm archiso grub python mtools mkinitcpio && bash scripts/build-iso.sh'
+            bash -lc 'pacman -Syu --noconfirm archiso grub python mtools mkinitcpio rust git pkgconf wayland libxkbcommon systemd-libs alsa-lib && bash scripts/build-iso.sh'
           sudo chown -R "$(id -u):$(id -g)" out
       - name: Boot graphical prototype in a disposable VM
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-system-x86 python3-pil
-          python3 scripts/test-boot.py
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-system-gui python3-pil xvfb xauth libgl1-mesa-dri mesa-utils
+          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a python3 scripts/test-boot.py
       - name: Report ISO size
         run: cat out/size.txt
       - name: Upload complete file register
@@ -48,6 +48,8 @@ jobs:
             out/splash-screen.png
             out/boot-details.ppm
             out/guide-screen.ppm
+            out/desktop-screen.ppm
+            out/chrome-screen.ppm
             out/boot-serial.log
             out/qemu.log
             out/size.txt
@@ -67,6 +69,8 @@ jobs:
             out/splash-screen.png
             out/boot-details.ppm
             out/guide-screen.ppm
+            out/desktop-screen.ppm
+            out/chrome-screen.ppm
             out/boot-serial.log
             out/qemu.log
           compression-level: 0

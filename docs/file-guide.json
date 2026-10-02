@@ -14,7 +14,7 @@
       ],
       "details": [
         "The current image is an x86_64 live preview. It does not install an operating system to a disk.",
-        "Niri, Hafþi and Google Chrome describe the planned installed desktop; the live prototype uses Cage and GTK.",
+        "The live desktop now includes Niri and Hafþi. Google Chrome is downloaded on first use into the disposable live home.",
         "The download is a GitHub Actions artifact containing the ISO, checksum and measured size."
       ]
     },
@@ -126,16 +126,14 @@
     },
     {
       "path": "live/root/.bash_profile",
-      "purpose": "Starts the graphical session when the live root account logs in on tty1.",
-      "when": "Bash reads it as the live login shell starts.",
+      "purpose": "Documents that root does not start the graphical live session.",
+      "when": "Read when inspecting login profiles.",
       "connections": [
         "live/etc/systemd/system/getty@tty1.service.d/autologin.conf",
         "live/usr/local/bin/hafthios-session"
       ],
       "details": [
-        "The tty check limits automatic graphical startup to /dev/tty1.",
-        "Other consoles remain available for troubleshooting.",
-        "If the graphical session exits, the login shell remains. No target disk installation is triggered."
+        "The graphical tty1 session now autologins as hafthi rather than root."
       ]
     },
     {
@@ -147,11 +145,9 @@
         "live/usr/local/bin/hafthios-welcome"
       ],
       "details": [
-        "Creates the live root runtime directory with mode 700.",
-        "GDK_BACKEND=wayland makes GTK use Wayland. GTK_THEME selects the dark theme.",
-        "WLR_RENDERER=pixman and GSK_RENDERER=cairo select software rendering for this initial prototype.",
-        "If a serial device is present, session output goes there for VM diagnostics.",
-        "dbus-run-session supplies a private session bus; Cage is the small Wayland compositor hosting the welcome window. This is not the planned Niri desktop."
+        "Starts Cage for the welcome screen as the ordinary live user.",
+        "Try the desktop sets a runtime marker; after Cage exits, this script starts niri-session.",
+        "Only Cage receives WLR_RENDERER=pixman. Niri uses accelerated graphics; failures print its user journal for diagnosis."
       ]
     },
     {
@@ -352,6 +348,79 @@
       ],
       "details": [
         "Checks dotfiles, dangling symlinks, directory symlinks without traversal, exact metadata ownership, stable register self-size and absence of transient SQLite journal entries. Verifies missing entries are rejected by the final coverage checker."
+      ]
+    },
+    {
+      "path": "scripts/build-hafthi.sh",
+      "purpose": "Builds the Hafþi terminal from a pinned upstream source revision.",
+      "when": "During the Arch ISO build.",
+      "details": [
+        "Compiles the MIT-licensed terminal with Rust and places the executable, command helper, license and source revision in the image.",
+        "Build dependencies live in the isolated build container. Cargo dependency resolution follows the upstream manifest, which currently has no committed lockfile."
+      ],
+      "connections": [
+        "scripts/build-iso.sh"
+      ]
+    },
+    {
+      "path": "live/root/customize_airootfs.sh",
+      "purpose": "Creates the ordinary live-session user and validates the Niri configuration.",
+      "when": "Archiso runs this customization hook after package installation.",
+      "details": [
+        "The hafthi account is UID 1000 and owns its disposable home. Autologin is limited to tty1.",
+        "The live user can administer the live session through sudo; this policy must not be copied to an installed system."
+      ],
+      "connections": [
+        "scripts/build-iso.sh"
+      ]
+    },
+    {
+      "path": "live/home/hafthi/.bash_profile",
+      "purpose": "Starts the graphical welcome from the live user’s tty1 login.",
+      "when": "When the autologin shell starts.",
+      "details": [
+        "The guard prevents graphical startup inside Hafþi or another terminal.",
+        "A session environment marker prevents recursion when niri-session starts a login shell."
+      ],
+      "connections": [
+        "scripts/build-iso.sh"
+      ]
+    },
+    {
+      "path": "live/etc/sudoers.d/hafthios-live",
+      "purpose": "Grants administrative commands in the disposable live session.",
+      "when": "When the live wheel user invokes sudo.",
+      "details": [
+        "No password is required in the live session.",
+        "Do not reuse this live-only policy on a disk installation."
+      ],
+      "connections": [
+        "scripts/build-iso.sh"
+      ]
+    },
+    {
+      "path": "live/etc/niri/config.kdl",
+      "purpose": "Defines the minimal Niri desktop and keyboard shortcuts.",
+      "when": "When Try the desktop starts Niri.",
+      "details": [
+        "Starts Hafþi and the desktop controls. Defines focus, window management, browser and guide shortcuts.",
+        "Uses the system’s accelerated graphics driver, not the welcome compositor’s software renderer."
+      ],
+      "connections": [
+        "scripts/build-iso.sh"
+      ]
+    },
+    {
+      "path": "live/usr/local/bin/hafthios-chrome",
+      "purpose": "Downloads and opens official Google Chrome without bundling its executable in the ISO.",
+      "when": "When Open Google Chrome is selected for the first time.",
+      "details": [
+        "Downloads over HTTPS directly from Google and extracts the official Debian package into the live user home.",
+        "Shows Google’s terms and an explicit download button. Download work runs in a background thread; failures allow retry.",
+        "Runs as a normal user with the namespace sandbox enabled. Does not use --no-sandbox or write to a target disk."
+      ],
+      "connections": [
+        "scripts/build-iso.sh"
       ]
     }
   ]
