@@ -110,7 +110,12 @@ def make(database, layers, root, catalog, final=False):
             if path.endswith('file-register.sqlite'):
                 purpose = 'Complete offline file register for this ISO build.'
                 evidence = 'Build pipeline'
-            row = (layer,path,kind,size,stat.filemode(info.st_mode),info.st_uid,info.st_gid,target,
+            # FAT does not store Unix ownership/permissions. Do not present the
+            # host extraction defaults as metadata from the EFI filesystem.
+            mode = stat.filemode(info.st_mode) if layer != 'EFI partition' else ''
+            uid = info.st_uid if layer != 'EFI partition' else None
+            gid = info.st_gid if layer != 'EFI partition' else None
+            row = (layer,path,kind,size,mode,uid,gid,target,
                    package,version,description,purpose,evidence)
             db.execute('INSERT INTO files VALUES (' + ','.join('?' for _ in COLUMNS) + ')', row)
             count += 1

@@ -45,3 +45,6 @@ class InventoryTests(unittest.TestCase):
             inventory.make(second,[('Initramfs',root)],root,{'files':[]})
             with self.assertRaises(RuntimeError):inventory.verify(first,second)
             inventory.verify(second,second)
+            inventory.make(second,[('EFI partition',root)],root,{'files':[]})
+            with sqlite3.connect(second) as db:
+                self.assertEqual(db.execute('SELECT mode,uid,gid FROM files WHERE path="/command"').fetchone(), ('',None,None))

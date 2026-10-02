@@ -10,7 +10,7 @@ The planned installed desktop is Arch Linux with Niri, Hafþi and Google Chrome.
 
 ## Offline file guide
 
-The English **Hafþi OS File Guide** explains every project file: its purpose, when it is used, connected files and implementation details. Click **Hafþi OS Guide** on the welcome screen or press **F1**. Search the guide and use **Show source** to read source snapshots matching that ISO, without a browser or internet connection.
+The English **Hafþi OS File Guide** opens a complete register of the ISO files. The separate **Project source guide** explains the project files: their purpose, when they are used, connected files and implementation details. Click **Hafþi OS Guide** on the welcome screen or press **F1**. In the project source guide, use **Show source** to read source snapshots matching that ISO, without a browser or internet connection.
 
 The guide is bundled at `/usr/share/doc/hafthios/` in the live image. The future disk installer must also copy this directory into the installed system. The current prototype does not install to disk. See [docs/index.md](docs/index.md) for maintenance details.
 

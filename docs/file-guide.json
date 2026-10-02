@@ -325,7 +325,7 @@
         "tests/test_inventory.py"
       ],
       "details": [
-        "Walks all entries without following symbolic links, including dotfiles, broken links, directories and special nodes. Reads exact live-system package owner/version/description from pacman manifests. Records type, size, mode, UID/GID and link target.",
+        "Walks all entries without following symbolic links, including dotfiles, broken links, directories and special nodes. Reads exact live-system package owner/version/description from pacman manifests. Records type, size, mode, UID/GID and link target. Unix permissions and ownership are left unassigned for the EFI FAT layer because FAT does not store them.",
         "Labels project explanations, package metadata, location-based inference and unverified roles distinctly. Other image layers do not claim live-system package ownership merely because paths match.",
         "Creates a paginated SQLite register, including the register itself, and exports the final records as CSV. Embedded compressed-container size is intentionally unknown until packaging; the exported final register records the actual size. Coverage verification compares every layer/path/type with the final ISO."
       ]

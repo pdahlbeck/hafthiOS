@@ -1,6 +1,6 @@
 # Hafþi OS File Guide
 
-An offline, English-language reference for every project-owned file in Hafþi OS.
+An offline English reference with a complete ISO file register and a separate project source guide.
 
 ## Open it locally
 
@@ -16,7 +16,7 @@ The bundle lives at `/usr/share/doc/hafthios/`. It needs no browser or internet 
 
 ## Read or maintain it in the repository
 
-Articles are stored in [file-guide.json](file-guide.json). The catalog covers project source, configuration, tests, build automation and documentation files. Arch-provided files and third-party packages are outside its scope.
+Articles are stored in [file-guide.json](file-guide.json). The catalog covers project source, configuration, tests, build automation and documentation files. Arch-provided files and third-party packages appear in the complete ISO register; this separate source-article catalog covers the project itself.
 
 The ISO build checks that every project file has an entry and bundles source copies matching that build. Update the explanation when changing behavior. New undocumented files stop the documentation build. Generated ISO files, screenshots, logs and bytecode are excluded.
 

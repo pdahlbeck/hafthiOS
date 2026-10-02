@@ -29,6 +29,15 @@ jobs:
           python3 scripts/test-boot.py
       - name: Report ISO size
         run: cat out/size.txt
+      - name: Upload complete file register
+        uses: actions/upload-artifact@v4
+        with:
+          name: hafthiOS-file-register
+          path: |
+            out/hafthios-file-register.csv
+            out/hafthios-file-register.sqlite
+            out/file-register-summary.txt
+          retention-days: 14
       - name: Upload VM preview and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
