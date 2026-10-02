@@ -3,7 +3,7 @@
 from pathlib import Path
 import sys
 
-PARAMETERS = 'quiet splash loglevel=3 systemd.show_status=true fbcon=nodefer rd.udev.log_level=3 vt.global_cursor_default=0'
+PARAMETERS = 'quiet splash loglevel=3 systemd.show_status=true fbcon=nodefer rd.udev.log_level=3 vt.global_cursor_default=0 cow_spacesize=50%'
 
 def prepare(profile):
     profile = Path(profile)

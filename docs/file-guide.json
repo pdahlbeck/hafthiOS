@@ -64,7 +64,7 @@
       "details": [
         "Copies /usr/share/archiso/configs/baseline into a temporary build workspace. It does not edit the system-wide baseline.",
         "Copies live/ into the image root and installs the guide under /usr/share/doc/hafthios/.",
-        "The package list contains the live kernel, Cage, Foot, GTK, Python, Mesa, NetworkManager, Polkit and fonts. It does not include the planned installed desktop.",
+        "Packages include Niri, Cage, GTK, Fish, Mesa and Vulkan drivers, network tools, browser runtime dependencies and fonts. The pinned Hafþi binary is compiled before packaging.",
         "Sets Hafþi OS branding and uses SquashFS with xz compression. Adds executable permissions for the two session programs.",
         "Enables NetworkManager in the live image, then invokes mkarchiso to produce out/*.iso.",
         "Writes a SHA256 checksum and size.txt. A marketed 1 GB USB target means less than 1,000,000,000 bytes.",
@@ -114,11 +114,11 @@
       "purpose": "Makes the live image log in automatically on its first virtual console.",
       "when": "systemd starts getty@tty1 while the live ISO boots.",
       "connections": [
-        "live/root/.bash_profile",
+        "live/home/hafthi/.bash_profile",
         "live/usr/local/bin/hafthios-session"
       ],
       "details": [
-        "The empty ExecStart= clears the original getty command. The next ExecStart= launches agetty with --autologin root.",
+        "The empty ExecStart= clears the original getty command. The next ExecStart= launches agetty with --autologin hafthi.",
         "%I expands to the instance name, tty1. --noclear keeps the existing console contents.",
         "This setting is for the disposable live image. It must not be copied unchanged into a future installed desktop.",
         "ExecStartPre asks Plymouth to quit while retaining its last frame, releasing graphics before Cage starts. A missing or unavailable Plymouth is nonfatal."
@@ -141,7 +141,7 @@
       "purpose": "Sets up the live graphical environment and launches the welcome application inside Cage.",
       "when": "Called by the live login profile on tty1.",
       "connections": [
-        "live/root/.bash_profile",
+        "live/home/hafthi/.bash_profile",
         "live/usr/local/bin/hafthios-welcome"
       ],
       "details": [
@@ -239,7 +239,8 @@
       ],
       "details": [
         "Adds quiet splash parameters, enables status collection behind the splash, and prevents deferred framebuffer-console takeover from leaving a stale ship frame in the details view. Retains the official live-medium discovery and loopback arguments. Hides the short UEFI menu, shortens the BIOS menu, and brands entries as Hafthi OS.",
-        "Fails if the expected boot entries are absent rather than silently producing an image without the splash. Running it twice does not duplicate parameters."
+        "Fails if the expected boot entries are absent rather than silently producing an image without the splash. Running it twice does not duplicate parameters.",
+        "Allocates up to half the RAM to the disposable copy-on-write layer so the first-use Chrome download and extraction fit. Space is consumed as needed, not preallocated."
       ]
     },
     {
@@ -421,6 +422,18 @@
       ],
       "connections": [
         "scripts/build-iso.sh"
+      ]
+    },
+    {
+      "path": "tests/test_chrome.py",
+      "purpose": "Checks Chrome sandbox policy and failed-download recovery.",
+      "when": "Local and CI checks before an ISO build.",
+      "connections": [
+        "live/usr/local/bin/hafthios-chrome"
+      ],
+      "details": [
+        "Rejects launching Chrome as root; verifies ordinary-user launches retain sandbox protections.",
+        "Simulates an offline download and verifies existing browser files are preserved and temporary files cleaned."
       ]
     }
   ]

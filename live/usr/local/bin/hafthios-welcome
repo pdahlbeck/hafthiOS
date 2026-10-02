@@ -48,6 +48,7 @@ def main():
                 window { background: #101e28; color: #ecf4f5; }
                 .brand { font-size: 16px; color: #80d6d1; font-weight: bold; }
                 .title { font-size: 44px; font-weight: bold; }
+                .desktop .title { font-size: 30px; }
                 .subtitle { font-size: 18px; color: #b8cdd5; }
                 .muted { color: #9cb3be; }
                 .notice { background: #1b303b; border-radius: 12px; padding: 18px; }
@@ -62,9 +63,10 @@ def main():
                 self.window.fullscreen()
             else:
                 self.window.set_default_size(440, 680)
+                self.window.add_css_class('desktop')
             root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=24)
             for side in ('top', 'bottom', 'start', 'end'):
-                getattr(root, 'set_margin_' + side)(48)
+                getattr(root, 'set_margin_' + side)(24 if '--desktop' in sys.argv else 48)
             self.window.set_child(root)
             root.append(self.label('HAFÞI OS  /  LIVE DESKTOP', 'brand'))
             self.pages = Gtk.Stack()
@@ -138,6 +140,7 @@ def main():
 
         def build_desktop(self):
             page = self.page('desktop', 'Welcome aboard.', 'Your Hafþi OS live desktop.')
+            page.set_spacing(12)
             page.append(self.button('Open Hafþi', lambda _: subprocess.Popen(['hafthi']), True))
             page.append(self.button('Open Google Chrome', lambda _: subprocess.Popen(['hafthios-chrome'])))
             page.append(self.button('Hafþi OS Guide', self.show_guide))

@@ -64,4 +64,4 @@ Choose **Project source guide** for the separate, detailed source explanations a
 - **Super + Left / Right**: switch columns.
 - **Super + Q**: close the focused window.
 
-Niri requires accelerated graphics, including virtual 3D acceleration in a VM. The welcome screen can run without it. The live session includes Fish and normal Arch package tools; it does not install anything onto a target disk. Hafþi is built from a pinned source commit in `scripts/build-hafthi.sh` and retains its MIT license.
+Use at least **4 GB RAM** for the desktop and first-use browser download. The live writable layer can use up to half the RAM. Niri requires accelerated graphics, including virtual 3D acceleration in a VM. The welcome screen can run without it. The live session includes Fish and normal Arch package tools; it does not install anything onto a target disk. Hafþi is built from a pinned source commit in `scripts/build-hafthi.sh` and retains its MIT license.
