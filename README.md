@@ -90,7 +90,7 @@ English and Swedish interface language can be selected independently of US and
 Swedish keyboard layouts. **F3** opens these settings; **Super + comma** opens
 settings inside Niri. Press **Esc** to return from settings or network status.
 The welcome screen, desktop controls and settings support Swedish; the file guide
-and installation preview remain in English. The locale also applies to new
+and installation details remain in English. The locale also applies to new
 terminal sessions. Existing applications retain their environment.
 
 The Niri keyboard changes immediately after **Apply**. Before entering Niri,
@@ -115,5 +115,5 @@ At present the installed login is a text login followed by the Niri desktop.
 The automated VM test uses a throwaway password only for its newly created virtual
 disk. There is no automatic disk-erasing test service or installer backdoor in the
 ISO. It verifies real disk boot with the optical image absent, password login,
-Swedish language/layout persistence, ext4 root and removal of the live login/sudo
+copied Chrome profile, Swedish language/layout persistence, ext4 root and removal of the live login/sudo
 policy. Real hardware still needs validation before using disks with valuable data.

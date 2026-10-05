@@ -18,9 +18,9 @@ MIN_SIZE = 12 * 1024**3
 COLUMNS = 'PATH,TYPE,RO,SIZE,MODEL,SERIAL,WWN,MAJ:MIN,MOUNTPOINTS'
 
 
-def command(args, *, input=None):
+def command(args, *, input=None, allowed=(0,)):
     result = subprocess.run(args, input=input, capture_output=True, text=True, timeout=1800)
-    if result.returncode:
+    if result.returncode not in allowed:
         # Command input can contain a password. Never print it or CalledProcessError.
         raise RuntimeError(f'{args[0]} failed: ' + (result.stderr or result.stdout)[-3000:])
     return result.stdout
@@ -121,7 +121,10 @@ def configure(root, request):
                  'root/customize_airootfs.sh', 'root/.bash_profile',
                  'etc/systemd/system/plymouth-quit.service',
                  'etc/systemd/system/plymouth-quit-wait.service',
-                 'etc/machine-id', 'var/lib/dbus/machine-id'):
+                 'etc/machine-id', 'var/lib/dbus/machine-id',
+                 'home/hafthi/.config/hafthios/chrome/SingletonLock',
+                 'home/hafthi/.config/hafthios/chrome/SingletonCookie',
+                 'home/hafthi/.config/hafthios/chrome/SingletonSocket'):
         (root / path).unlink(missing_ok=True)
     for path in (root / 'etc/systemd/system').rglob('*'):
         if path.is_symlink() and ('archiso' in path.name or 'pacman-init' in path.name or 'choose-mirror' in path.name):
@@ -203,13 +206,15 @@ def install(request):
                 (root / 'boot/efi').mkdir(parents=True)
                 command(['mount', efi, str(root / 'boot/efi')])
                 phase('Copying Hafthi OS and the offline file guide')
+                # A running live session can remove temporary files during copying.
+                # Rsync exit 24 means vanished source files; other failures remain fatal.
                 command(['rsync', '-aHAXx', '--numeric-ids',
                          '--exclude=/dev/*', '--exclude=/proc/*', '--exclude=/sys/*',
                          '--exclude=/run/*', '--exclude=/tmp/*', '--exclude=/mnt/*',
                          '--exclude=/media/*', '--exclude=/lost+found',
                          '--exclude=/etc/resolv.conf', '--exclude=/var/tmp/*',
-                         '--exclude=/var/cache/pacman/pkg/*', '/', str(root) + '/'])
-                command(['rsync', '-aHAX', '--numeric-ids', '/home/hafthi/', str(root / 'home/hafthi') + '/'])
+                         '--exclude=/var/cache/pacman/pkg/*', '/', str(root) + '/'], allowed=(0, 24))
+                command(['rsync', '-aHAX', '--numeric-ids', '/home/hafthi/', str(root / 'home/hafthi') + '/'], allowed=(0, 24))
                 # Archiso /etc/resolv.conf can be a live-runtime link. Install a normal resolver file.
                 resolver = Path('/etc/resolv.conf').read_text()
                 write(root, '/etc/resolv.conf', resolver)

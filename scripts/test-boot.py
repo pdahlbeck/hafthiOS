@@ -286,7 +286,16 @@ with open('/dev/ttyS0','w') as serial: serial.write('HAFTHIOS_INSTALL_OK\\n')
                 raise RuntimeError('Live account privileges were left enabled')
             time.sleep(3)
             capture_screen(sock_path, out / ('installed-' + firmware + '-desktop.ppm'))
-            print('Installed ' + firmware.upper() + ' disk boot passed: password login, Hafthi, persistent Swedish settings, ext4 root and live policy removal.')
+            qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'meta_l'}, {'type': 'qcode', 'data': 'b'}]})
+            deadline = time.monotonic() + 120
+            while time.monotonic() < deadline:
+                if window_present(serial_path.read_text(errors='replace'), 'google-chrome'):
+                    break
+                time.sleep(3)
+            else:
+                raise RuntimeError('Copied Chrome profile did not open on installed ' + firmware)
+            capture_screen(sock_path, out / ('installed-' + firmware + '-chrome.ppm'))
+            print('Installed ' + firmware.upper() + ' disk boot passed: password login, Hafthi, copied Chrome profile, persistent Swedish settings, ext4 root and live policy removal.')
             process.terminate()
             process.wait(timeout=20)
 

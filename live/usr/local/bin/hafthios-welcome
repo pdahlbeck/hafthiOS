@@ -49,8 +49,7 @@ SWEDISH = {
     'Your Hafþi OS live desktop.': 'Ditt Hafþi OS-skrivbord.',
     'Open Hafþi': 'Öppna Hafþi',
     'Open Google Chrome': 'Öppna Google Chrome',
-    'Prototype preview · Your disks will not be changed.': 'Förhandsversion · Dina diskar ändras inte.',
-    'Settings': 'Inställningar',
+        'Settings': 'Inställningar',
     'Choose the language and keyboard for this live session.': 'Välj språk och tangentbord för den här sessionen.',
     'Language': 'Språk',
     'Keyboard': 'Tangentbord',
@@ -123,7 +122,7 @@ def main():
             for side in ('top', 'bottom', 'start', 'end'):
                 getattr(root, 'set_margin_' + side)(24 if '--desktop' in sys.argv else 48)
             self.window.set_child(root)
-            root.append(self.label('HAFÞI OS  /  LIVE DESKTOP', 'brand'))
+            root.append(self.label('HAFÞI OS  /  DESKTOP' if Path('/etc/hafthios-installed').exists() else 'HAFÞI OS  /  LIVE DESKTOP', 'brand'))
             self.pages = Gtk.Stack()
             self.pages.set_vexpand(True)
             self.pages.set_vhomogeneous(False)

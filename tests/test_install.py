@@ -62,7 +62,7 @@ class InstallationSafetyTests(unittest.TestCase):
     def test_installed_config_removes_live_autologin_and_passwordless_sudo(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
-            for path in ('etc/systemd/system/getty@tty1.service.d/autologin.conf','etc/sudoers.d/hafthios-live','etc/mkinitcpio.conf.d/archiso.conf'):
+            for path in ('etc/systemd/system/getty@tty1.service.d/autologin.conf','etc/sudoers.d/hafthios-live','etc/mkinitcpio.conf.d/archiso.conf','home/hafthi/.config/hafthios/chrome/SingletonLock'):
                 target=root/path; target.parent.mkdir(parents=True,exist_ok=True); target.write_text('live-only')
             kernel=root/'usr/lib/modules/test/vmlinuz';kernel.parent.mkdir(parents=True);kernel.write_bytes(b'kernel')
             (root/'boot').mkdir()
@@ -72,6 +72,7 @@ class InstallationSafetyTests(unittest.TestCase):
             with patch.dict(backend['configure'].__globals__, command=command, phase=lambda _:None):
                 backend['configure'](root, {'password':'test-password-123','settings':{'language':'sv','keyboard':'se'}})
             self.assertFalse((root/'etc/sudoers.d/hafthios-live').exists())
+            self.assertFalse((root/'home/hafthi/.config/hafthios/chrome/SingletonLock').exists())
             self.assertFalse((root/'etc/systemd/system/getty@tty1.service.d/autologin.conf').exists())
             self.assertNotIn('NOPASSWD', (root/'etc/sudoers.d/hafthios-wheel').read_text())
             self.assertNotIn('archiso', (root/'etc/mkinitcpio.conf').read_text())
