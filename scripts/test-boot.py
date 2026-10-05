@@ -49,15 +49,28 @@ def type_text(sock_path, text):
     unknown = set(text) - set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') - set(special)
     if unknown:
         raise ValueError('Unsupported VM console characters: ' + repr(sorted(unknown)))
+
+    def event(key, down):
+        return {'type': 'key', 'data': {'down': down, 'key': {'type': 'qcode', 'data': key}}}
+
+    # send-key uses a shared release timer; overlapping chords can leave Shift
+    # held during long text. Explicit down/up events preserve every character.
+    modifiers = ('shift', 'shift_r', 'ctrl', 'ctrl_r', 'alt', 'alt_r', 'meta_l', 'meta_r')
+    qmp_request(sock_path, 'input-send-event', {'events': [event(key, False) for key in modifiers]})
+
+    def press(keys):
+        qmp_request(sock_path, 'input-send-event', {'events': [event(key, True) for key in keys]})
+        time.sleep(0.04)
+        qmp_request(sock_path, 'input-send-event', {'events': [event(key, False) for key in reversed(keys)]})
+        time.sleep(0.04)
+
     for character in text:
         if character.isalnum():
             key, shift = character.lower(), character.isupper()
         else:
             key, shift = special[character]
-        keys = ([{'type':'qcode', 'data':'shift'}] if shift else []) + [{'type':'qcode', 'data':key}]
-        qmp_request(sock_path, 'send-key', {'keys':keys, 'hold-time':20})
-        time.sleep(0.04)
-    qmp_request(sock_path, 'send-key', {'keys':[{'type':'qcode', 'data':'ret'}]})
+        press((['shift'] if shift else []) + [key])
+    press(['ret'])
 
 
 def capture_screen(sock_path, filename):
@@ -271,7 +284,8 @@ with tempfile.TemporaryDirectory() as tmp:
         else:
             raise RuntimeError('The installation test console did not execute its readiness command')
         capture_screen(sock_path, out / 'installer-console.ppm')
-        script = """import runpy
+        script = """print('HAFTHIOS_INSTALL_STARTED', flush=True)
+import runpy
 from pathlib import Path
 backend=runpy.run_path('/usr/local/bin/hafthios-install')
 plan=backend['make_plan']('/dev/vda')
@@ -281,6 +295,14 @@ with open('/dev/ttyS0','w') as serial: serial.write('HAFTHIOS_INSTALL_OK\\n')
         script = 'import traceback\ntry:\n' + '\n'.join('    ' + line for line in script.splitlines()) + '\nexcept Exception:\n    traceback.print_exc()\n    print("HAFTHIOS_INSTALL_ERROR", flush=True)\n'
         encoded = base64.b64encode(script.encode()).decode()
         type_text(sock_path, 'echo ' + encoded + ' | base64 -d | sudo python3 > /dev/ttyS0 2>&1')
+        deadline = time.monotonic() + 45
+        while time.monotonic() < deadline:
+            installation_log = serial_path.read_text(errors='replace')
+            if 'HAFTHIOS_INSTALL_STARTED' in installation_log:
+                break
+            time.sleep(1)
+        else:
+            raise RuntimeError('The VM console did not execute the complete installation script')
         deadline = time.monotonic() + 1800
         while time.monotonic() < deadline:
             installation_log = serial_path.read_text(errors='replace')
@@ -367,7 +389,9 @@ with open('/dev/ttyS0','w') as serial: serial.write('HAFTHIOS_INSTALL_OK\\n')
             except (OSError, RuntimeError, ValueError):
                 pass
         if serial_path.exists():
-            print(serial_path.read_text(errors='replace')[-12000:])
+            log = serial_path.read_text(errors='replace')
+            diagnostics = '\n'.join(line for line in log.splitlines() if not line.startswith('HAFTHIOS_DESKTOP_READY '))
+            print(diagnostics[-16000:])
         process.terminate()
         try:
             process.wait(timeout=20)

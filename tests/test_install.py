@@ -49,11 +49,28 @@ class InstallationSafetyTests(unittest.TestCase):
         function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'type_text')
         namespace = {'time': SimpleNamespace(sleep=lambda _: None)}
         events = []
-        namespace['qmp_request'] = lambda _socket, _name, args: events.append(args)
+        namespace['qmp_request'] = lambda _socket, _name, args: events.extend(args['events'])
         exec(compile(ast.Module(body=[function], type_ignores=[]), '<console test>', 'exec'), namespace)
         namespace['type_text']('mock-socket', 'echo Q+/== | base64 -d | sudo python3 > /dev/ttyS0 2>&1')
-        self.assertTrue(any(event['keys'] == [{'type':'qcode','data':'shift'}, {'type':'qcode','data':'7'}] for event in events))
-        self.assertEqual(events[-1]['keys'], [{'type':'qcode','data':'ret'}])
+        held = set()
+        typed = []
+        shifted = {'7':'&', 'equal':'+', 'backslash':'|', 'dot':'>', 'minus':'_'}
+        plain = {'spc':' ', 'equal':'=', 'backslash':'\\', 'dot':'.', 'minus':'-', 'slash':'/'}
+        for event in events:
+            data = event['data']
+            key = data['key']['data']
+            if data['down']:
+                held.add(key)
+                if key not in ('shift','shift_r','ctrl','ctrl_r','alt','alt_r','meta_l','meta_r','ret'):
+                    if 'shift' in held:
+                        typed.append(shifted.get(key, key.upper()))
+                    else:
+                        typed.append(plain.get(key, key))
+            else:
+                held.discard(key)
+        self.assertEqual(''.join(typed), 'echo Q+/== | base64 -d | sudo python3 > /dev/ttyS0 2>&1')
+        self.assertEqual(held, set())
+        self.assertEqual(events[-1]['data'], {'down': False, 'key': {'type':'qcode','data':'ret'}})
         events.clear()
         with self.assertRaises(ValueError):
             namespace['type_text']('mock-socket', 'echo unsupported!')
