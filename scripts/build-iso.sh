@@ -24,6 +24,7 @@ file_permissions+=(
   ["/usr/local/libexec/hafthi/g"]="0:0:755"
   ["/usr/local/bin/hafthios-chrome"]="0:0:755"
   ["/usr/local/bin/hafthios-settings"]="0:0:755"
+  ["/usr/local/bin/hafthios-install"]="0:0:755"
   ["/usr/local/bin/hafthios-terminal"]="0:0:755"
   ["/root/customize_airootfs.sh"]="0:0:755"
   ["/etc/sudoers.d/hafthios-live"]="0:0:440"
@@ -33,6 +34,11 @@ file_permissions+=(
 PROFILE
 cat > "$profile/packages.x86_64" <<'PACKAGES'
 base
+arch-install-scripts
+rsync
+grub
+dosfstools
+e2fsprogs
 ca-certificates
 linux
 mkinitcpio

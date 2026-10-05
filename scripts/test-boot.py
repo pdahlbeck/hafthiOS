@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Boot the ISO with TCG and a disposable disk; check GTK's ready marker."""
 import json
+import base64
+import shutil
 import os
 import pathlib
 import socket
@@ -38,6 +40,21 @@ def qmp_request(sock_path, name, arguments):
                     return response['return']
         command('qmp_capabilities')
         return command(name, arguments)
+
+def type_text(sock_path, text):
+    special = {' ': ('spc', False), '-': ('minus', False), '=': ('equal', False),
+               '+': ('equal', True), '/': ('slash', False), '|': ('backslash', True),
+               '>': ('dot', True), '.': ('dot', False), '_': ('minus', True)}
+    for character in text:
+        if character.isalnum():
+            key, shift = character.lower(), character.isupper()
+        else:
+            key, shift = special[character]
+        keys = ([{'type':'qcode', 'data':'shift'}] if shift else []) + [{'type':'qcode', 'data':key}]
+        qmp_request(sock_path, 'send-key', {'keys':keys, 'hold-time':20})
+        time.sleep(0.04)
+    qmp_request(sock_path, 'send-key', {'keys':[{'type':'qcode', 'data':'ret'}]})
+
 
 def capture_screen(sock_path, filename):
     # GL scanouts may have no CPU surface for QMP screendump. Capture the actual
@@ -196,7 +213,83 @@ with tempfile.TemporaryDirectory() as tmp:
             raise RuntimeError('Google Chrome window did not open after download')
         time.sleep(10)
         capture_screen(sock_path, out / 'chrome-screen.ppm')
-        print('BIOS VM boot passed: animated ship, Esc details, welcome screen and offline guide reached.')
+        print('BIOS live VM boot passed: ship, settings, guide, Hafthi and Chrome.')
+        # The sole target is a newly created disposable 16 GiB VM disk.
+        # Feed a test script through the actual VM console; no auto-erasing service
+        # or test backdoor is shipped in the ISO.
+        qmp_request(sock_path, 'send-key', {'keys':[{'type':'qcode','data':'ctrl'}, {'type':'qcode','data':'alt'}, {'type':'qcode','data':'f2'}]})
+        time.sleep(5)
+        type_text(sock_path, 'hafthi')
+        time.sleep(5)
+        type_text(sock_path, '')
+        time.sleep(2)
+        script = """import runpy
+from pathlib import Path
+backend=runpy.run_path('/usr/local/bin/hafthios-install')
+plan=backend['make_plan']('/dev/vda')
+backend['install']({'token':plan['token'],'confirmation':plan['confirmation'],'password':'testpassword123','settings':{'language':'sv','keyboard':'se'}})
+with open('/dev/ttyS0','w') as serial: serial.write('HAFTHIOS_INSTALL_OK\\n')
+"""
+        encoded = base64.b64encode(script.encode()).decode()
+        type_text(sock_path, 'echo ' + encoded + ' | base64 -d | sudo python3 > /dev/ttyS0 2>&1')
+        deadline = time.monotonic() + 900
+        while time.monotonic() < deadline:
+            if 'HAFTHIOS_INSTALL_OK' in serial_path.read_text(errors='replace'):
+                break
+            if process.poll() is not None:
+                raise RuntimeError('Live VM exited during installation')
+            time.sleep(3)
+        else:
+            raise RuntimeError('Disk installation did not finish: ' + serial_path.read_text(errors='replace')[-4000:])
+        process.terminate()
+        process.wait(timeout=20)
+        for firmware in ('bios', 'uefi'):
+            sock_path.unlink(missing_ok=True)
+            serial_path = out / ('installed-' + firmware + '-serial.log')
+            extra = []
+            if firmware == 'uefi':
+                variables = tmp / 'OVMF_VARS.fd'
+                shutil.copyfile('/usr/share/OVMF/OVMF_VARS_4M.fd', variables)
+                extra = ['-drive', 'if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd',
+                         '-drive', 'if=pflash,format=raw,file=' + str(variables)]
+            process = subprocess.Popen([
+                'qemu-system-x86_64', '-accel', 'tcg', '-m', '4096', '-smp', '2', '-cpu', 'max',
+                '-boot', 'c', '-drive', f'file={disk},format=raw,if=virtio',
+                '-vga', 'none', '-device', 'virtio-vga-gl', '-display', 'sdl,gl=on',
+                '-serial', f'file:{serial_path}', '-monitor', 'none',
+                '-qmp', f'unix:{sock_path},server=on,wait=off', '-no-reboot', *extra,
+            ], stdout=subprocess.DEVNULL, stderr=open(out / ('installed-' + firmware + '-qemu.log'), 'w'))
+            # Real firmware + GRUB boot from disk, with the ISO physically absent.
+            time.sleep(90)
+            capture_screen(sock_path, out / ('installed-' + firmware + '-login.ppm'))
+            type_text(sock_path, 'hafthi')
+            time.sleep(3)
+            type_text(sock_path, 'testpassword123')
+            deadline = time.monotonic() + 240
+            while time.monotonic() < deadline:
+                text = serial_path.read_text(errors='replace') if serial_path.exists() else ''
+                if 'HAFTHIOS_INSTALLED_READY ' in text and window_present(text, 'se.dahlbeck.hafthi'):
+                    break
+                if process.poll() is not None:
+                    raise RuntimeError('Installed VM exited before the desktop')
+                time.sleep(3)
+            else:
+                capture_screen(sock_path, out / ('installed-' + firmware + '-failure.ppm'))
+                raise RuntimeError('Installed ' + firmware + ' desktop did not start: ' + text[-4000:])
+            marker = text.split('HAFTHIOS_INSTALLED_READY ')[-1].splitlines()[0]
+            state = json.loads(marker)
+            if state['settings'] != {'language':'sv','keyboard':'se'}:
+                raise RuntimeError('Language and keyboard were not preserved')
+            if state['root']['filesystems'][0]['fstype'] != 'ext4':
+                raise RuntimeError('The installed VM is not running from its ext4 disk')
+            if not state['live_sudo_removed'] or not state['autologin_removed']:
+                raise RuntimeError('Live account privileges were left enabled')
+            time.sleep(3)
+            capture_screen(sock_path, out / ('installed-' + firmware + '-desktop.ppm'))
+            print('Installed ' + firmware.upper() + ' disk boot passed: password login, Hafthi, persistent Swedish settings, ext4 root and live policy removal.')
+            process.terminate()
+            process.wait(timeout=20)
+
     finally:
         if process.poll() is None and not (out / 'boot-screen.ppm').exists():
             try:

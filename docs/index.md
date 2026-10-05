@@ -12,7 +12,7 @@ hafthios-welcome --guide
 
 Search for a file name or a word in its explanation. Select a file to see its purpose, when it is used, connected files and implementation details. **Show source** displays the exact source snapshot bundled with that ISO; it does not execute it.
 
-The bundle lives at `/usr/share/doc/hafthios/`. It needs no browser or internet connection. It is included in the current live image; the future disk installer must copy the same bundle into the installed system. The prototype does not yet install to disk.
+The bundle lives at `/usr/share/doc/hafthios/`. It needs no browser or internet connection. It is included in the live image and copied to the installed system by the disk installer.
 
 ## Read or maintain it in the repository
 

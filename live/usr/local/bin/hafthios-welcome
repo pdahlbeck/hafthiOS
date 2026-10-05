@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only installer UI prototype. No target-disk writes are implemented."""
+"""Live welcome and reviewed whole-disk installation UI."""
 import os
 import json
 import sqlite3
@@ -33,12 +33,17 @@ def read_disks():
 SWEDISH = {
     'A quiet desktop.\nA powerful terminal.': 'Ett lugnt skrivbord.\nEn kraftfull terminal.',
     'Arch Linux, Wayland and Hafþi. A simpler place to start.': 'Arch Linux, Wayland och Hafþi. En enklare start.',
-    'Try the desktop from USB. Disk installation is still a preview.': 'Prova skrivbordet från USB. Diskinstallationen är fortfarande en förhandsvisning.',
+    'Try the desktop from USB, or install Hafþi OS on a disk.': 'Prova skrivbordet från USB eller installera Hafþi OS på en disk.',
     'Try the desktop': 'Prova skrivbordet',
     'Preview installation': 'Förhandsvisa installation',
     'Hafþi OS Guide': 'Hafþi OS-filguide',
     'Network settings': 'Nätverksinställningar',
     'Language and keyboard': 'Språk och tangentbord',
+    'Install Hafþi OS': 'Installera Hafþi OS',
+    'Erase disk and install': 'Radera disken och installera',
+    'Review installation': 'Granska installationen',
+    'Live USB · Installation erases only the disk you confirm.': 'Live-USB · Installationen raderar bara disken som du bekräftar.',
+    'Hafþi OS · Installed system': 'Hafþi OS · Installerat system',
     'Restart': 'Starta om',
     'Welcome aboard.': 'Välkommen ombord.',
     'Your Hafþi OS live desktop.': 'Ditt Hafþi OS-skrivbord.',
@@ -53,7 +58,7 @@ SWEDISH = {
     'Back': 'Tillbaka',
     'Back to welcome': 'Tillbaka till välkomstsidan',
     'Return to welcome': 'Tillbaka till välkomstsidan',
-    'Changes last until you restart. The file guide remains in English.': 'Ändringarna gäller tills du startar om. Filguiden är kvar på engelska.',
+    'Settings are saved on an installed system. In a live session they last until restart. The file guide remains in English.': 'På ett installerat system sparas inställningarna. I en live-session gäller de till omstart. Filguiden är kvar på engelska.',
     'Could not apply settings: ': 'Kunde inte tillämpa inställningarna: ',
     'Could not read network status: ': 'Kunde inte läsa nätverksstatus: ',
     'Could not open network settings: ': 'Kunde inte öppna nätverksinställningarna: ',
@@ -84,6 +89,9 @@ def main():
             self.settings_backend = runpy.run_path(str(Path(__file__).with_name('hafthios-settings')))
             self.settings = self.settings_backend['read_settings']()
             self.translatable = []
+            self.installer = runpy.run_path(str(Path(__file__).with_name('hafthios-install')))
+            self.install_plan = None
+            self.installing = False
             self.disks = []
             self.guide_entries = []
             self.guide_directory = Path("/usr/share/doc/hafthios")
@@ -136,7 +144,7 @@ def main():
             keys = Gtk.EventControllerKey()
             keys.connect('key-pressed', self.guide_key)
             self.window.add_controller(keys)
-            root.append(self.label('Prototype preview · Your disks will not be changed.', 'muted'))
+            root.append(self.label('Live USB · Installation erases only the disk you confirm.' if not Path('/etc/hafthios-installed').exists() else 'Hafþi OS · Installed system', 'muted'))
             if '--desktop' in sys.argv:
                 self.pages.set_visible_child_name('desktop')
                 GLib.timeout_add_seconds(2, self.desktop_ready)
@@ -146,6 +154,7 @@ def main():
                 self.show_settings(None)
             if '--guide' in sys.argv:
                 self.show_guide(None)
+            self.window.connect('close-request', lambda *_: self.installing)
             self.window.present()
             GLib.idle_add(self.boot_ready)
 
@@ -154,7 +163,10 @@ def main():
             try:
                 with open('/dev/ttyS0', 'w') as serial:
                     serial.write('HAFTHIOS_GUI_READY\n')
-            except OSError:
+                    if Path('/etc/hafthios-installed').exists():
+                        root = subprocess.run(['findmnt', '-J', '-o', 'SOURCE,FSTYPE', '/'], check=True, capture_output=True, text=True, timeout=5)
+                        serial.write('HAFTHIOS_INSTALLED_READY ' + json.dumps({'settings': self.settings, 'root': json.loads(root.stdout), 'live_sudo_removed': not Path('/etc/sudoers.d/hafthios-live').exists(), 'autologin_removed': not Path('/etc/systemd/system/getty@tty1.service.d/autologin.conf').exists()}) + '\n')
+            except (OSError, subprocess.SubprocessError, ValueError):
                 pass
             return False
 
@@ -193,10 +205,10 @@ def main():
         def build_welcome(self):
             page = self.page('welcome', 'A quiet desktop.\nA powerful terminal.',
                              'Arch Linux, Wayland and Hafþi. A simpler place to start.')
-            note = self.label('Try the desktop from USB. Disk installation is still a preview.', 'notice')
+            note = self.label('Try the desktop from USB, or install Hafþi OS on a disk.', 'notice')
             page.append(note)
             page.append(self.button('Try the desktop', self.try_desktop, True))
-            page.append(self.button('Preview installation', self.show_disks))
+            page.append(self.button('Install Hafþi OS', self.show_disks))
             page.append(self.button('Hafþi OS Guide', self.show_guide))
             page.append(self.button('Language and keyboard', self.show_settings))
             page.append(self.button('Network settings', self.network))
@@ -212,6 +224,8 @@ def main():
             page.append(self.button('Open Hafþi', lambda _: subprocess.Popen(['hafthios-terminal']), True))
             page.append(self.button('Open Google Chrome', lambda _: subprocess.Popen(['hafthios-chrome'])))
             page.append(self.button('Hafþi OS Guide', self.show_guide))
+            if not Path('/etc/hafthios-installed').exists():
+                page.append(self.button('Install Hafþi OS', self.show_disks))
             page.append(self.button('Language and keyboard', self.show_settings))
             page.append(self.button('Network settings', self.network))
             page.append(self.label('Super + Enter  ·  Terminal\nSuper + B  ·  Browser\nSuper + G  ·  File guide\nSuper + ← / →  ·  Switch windows\nSuper + Q  ·  Close window', 'notice'))
@@ -227,6 +241,11 @@ def main():
             return True
 
         def guide_key(self, controller, keyval, keycode, state):
+            if self.installing:
+                return False
+            if keyval == Gdk.KEY_F4 and not Path('/etc/hafthios-installed').exists():
+                self.show_disks(None)
+                return True
             if keyval == Gdk.KEY_F2 and '--desktop' not in sys.argv:
                 self.try_desktop(None)
                 return True
@@ -423,50 +442,147 @@ def main():
 
         def build_disk_page(self):
             page = self.page('disks', 'Choose your disk',
-                             'Preview a target disk. Nothing will be erased or installed.')
+                             'The entire selected disk will be erased. Mounted disks and the live USB are excluded.')
             self.disk_choice = Gtk.DropDown.new_from_strings(['Scanning disks…'])
             page.append(self.disk_choice)
-            self.disk_status = self.label('', 'muted')
+            self.disk_status = self.label('', 'notice')
             page.append(self.disk_status)
             self.continue_button = self.button('Review installation', self.review, True)
             page.append(self.continue_button)
-            page.append(self.button('Back', lambda _: self.pages.set_visible_child_name('desktop' if '--desktop' in sys.argv else 'welcome')))
+            page.append(self.button('Back', self.return_home))
 
         def show_disks(self, _):
+            if Path('/etc/hafthios-installed').exists():
+                return
+            self.install_plan = None
             self.pages.set_visible_child_name('disks')
-            try:
-                self.disks = read_disks()
-                labels = [disk_label(disk) for disk in self.disks] or ['No writable disks found']
+            self.continue_button.set_sensitive(False)
+            self.disk_status.set_text('Scanning available disks…')
+            def finished(disks, error):
+                self.disks = disks or []
+                labels = [f"{d['path']} · {str(d.get('model') or 'Disk').strip()} · {int(d['size']) / 1_000_000_000:.1f} GB" for d in self.disks] or ['No eligible disks found']
                 self.disk_choice.set_model(Gtk.StringList.new(labels))
                 self.disk_choice.set_selected(0)
                 self.continue_button.set_sensitive(bool(self.disks))
-                self.disk_status.set_text('Choose a disposable virtual disk when testing in a VM.')
-            except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
-                self.disks = []
-                self.continue_button.set_sensitive(False)
-                self.disk_status.set_text(f'Could not read disks: {error}')
+                self.disk_status.set_text('Could not read disks: ' + error if error else 'At least 12 GiB required. Back up any files before erasing a disk.')
+                return False
+            self.settings_task(self.installer['read_disks'], finished)
 
         def build_review_page(self):
-            page = self.page('review', 'Meet your new desktop',
-                             'A preview of the system we are building.')
+            page = self.page('review', 'Install Hafþi OS', 'Review the disk before erasing it.')
+            page.set_spacing(12)
             self.summary = self.label('', 'notice')
             page.append(self.summary)
-            page.append(self.label('Installation is unavailable in Prototype 01.\nThis preview has not changed your disk.', 'muted'))
-            page.append(self.button('Back', lambda _: self.pages.set_visible_child_name('disks')))
-            page.append(self.button('Return to welcome', lambda _: self.pages.set_visible_child_name('desktop' if '--desktop' in sys.argv else 'welcome'), True))
+            page.append(self.label('User: hafthi. Choose your login password (at least 8 characters).', 'muted'))
+            self.install_password = Gtk.PasswordEntry()
+            self.install_password.set_show_peek_icon(True)
+            page.append(self.install_password)
+            page.append(self.label('Repeat password', 'muted'))
+            self.install_password_repeat = Gtk.PasswordEntry()
+            page.append(self.install_password_repeat)
+            self.erase_prompt = self.label('', 'muted')
+            page.append(self.erase_prompt)
+            self.erase_confirmation = Gtk.Entry()
+            page.append(self.erase_confirmation)
+            self.install_status = self.label('', 'notice')
+            page.append(self.install_status)
+            self.install_button = self.button('Erase disk and install', self.start_install, True)
+            page.append(self.install_button)
+            self.install_back = self.button('Back', lambda _: self.show_disks(None))
+            page.append(self.install_back)
+            self.install_restart = self.button('Restart', self.restart)
+            self.install_restart.set_visible(False)
+            page.append(self.install_restart)
 
         def review(self, _):
             index = self.disk_choice.get_selected()
             if index >= len(self.disks):
                 return
-            disk = self.disks[index]
-            self.summary.set_text('Selected disk: ' + disk_label(disk)
-                                  + '\n\nPlanned system: Arch Linux'
-                                  + '\nDesktop: Niri / Wayland'
-                                  + '\nTerminal: Hafþi'
-                                  + '\nBrowser: Google Chrome'
-                                  + '\n\nMode: preview only')
-            self.pages.set_visible_child_name('review')
+            path = self.disks[index]['path']
+            self.continue_button.set_sensitive(False)
+            def plan():
+                result = subprocess.run(['sudo', '-n', '/usr/local/bin/hafthios-install', 'plan', path],
+                                        check=True, capture_output=True, text=True, timeout=10)
+                return json.loads(result.stdout)
+            def finished(plan, error):
+                self.continue_button.set_sensitive(True)
+                if error:
+                    self.disk_status.set_text('Could not prepare installation: ' + error)
+                    return False
+                self.install_plan = plan
+                self.summary.set_text('ALL DATA ON ' + path + ' WILL BE ERASED.\n'
+                                      + f"Size: {int(plan['disk']['size']) / 1_000_000_000:.1f} GB\n"
+                                      + 'BIOS + UEFI boot · ext4 system\nNiri · Hafþi · Chrome on first use\n'
+                                      + 'Your language, keyboard, home files and offline guide will be saved.')
+                self.install_password.set_text('')
+                self.install_password_repeat.set_text('')
+                self.erase_confirmation.set_text('')
+                self.erase_prompt.set_text('Type exactly: ' + plan['confirmation'])
+                self.install_status.set_text('This cannot be undone. Installation begins only after you confirm.')
+                self.install_button.set_sensitive(True)
+                self.install_back.set_sensitive(True)
+                self.install_restart.set_visible(False)
+                self.pages.set_visible_child_name('review')
+                return False
+            self.settings_task(plan, finished)
+
+        def start_install(self, _):
+            if self.install_plan is None or self.installing:
+                return
+            password = self.install_password.get_text()
+            if len(password) < 8 or password != self.install_password_repeat.get_text():
+                self.install_status.set_text('Enter matching passwords of at least 8 characters.')
+                return
+            confirmation = self.erase_confirmation.get_text()
+            if confirmation != self.install_plan['confirmation']:
+                self.install_status.set_text('Type exactly: ' + self.install_plan['confirmation'])
+                return
+            request = {'token': self.install_plan['token'], 'confirmation': confirmation,
+                       'password': password, 'settings': self.settings_backend['read_settings']()}
+            self.install_password.set_text('')
+            self.install_password_repeat.set_text('')
+            self.installing = True
+            self.window.set_deletable(False)
+            self.install_button.set_sensitive(False)
+            self.install_back.set_sensitive(False)
+            self.install_status.set_text('Starting installation… Keep the computer powered on.')
+            def worker():
+                complete = False
+                error = None
+                try:
+                    # Password travels only over stdin, never in command arguments or logs.
+                    process = subprocess.Popen(['sudo', '-n', '/usr/local/bin/hafthios-install', 'install'],
+                                               stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                               stderr=subprocess.STDOUT, text=True)
+                    process.stdin.write(json.dumps(request))
+                    process.stdin.close()
+                    request.pop('password', None)
+                    for line in process.stdout:
+                        try:
+                            event = json.loads(line)
+                        except ValueError:
+                            continue
+                        if 'phase' in event:
+                            GLib.idle_add(self.install_status.set_text, event['phase'])
+                        if 'error' in event:
+                            error = event['error']
+                        complete = complete or bool(event.get('complete'))
+                    if process.wait() != 0 or not complete:
+                        error = error or 'Installation did not finish. Keep the live USB available for recovery.'
+                except Exception as exc:
+                    error = str(exc)
+                def finished():
+                    self.installing = False
+                    self.window.set_deletable(True)
+                    if error:
+                        self.install_status.set_text('Installation failed: ' + error + '\nThe selected disk may be partially written. Select it again to retry.')
+                        self.install_back.set_sensitive(True)
+                    else:
+                        self.install_status.set_text('Installation complete. Restart, remove the ISO/USB, and log in as hafthi with your password. Your settings are saved.')
+                        self.install_restart.set_visible(True)
+                    return False
+                GLib.idle_add(finished)
+            threading.Thread(target=worker, daemon=True).start()
 
         def settings_task(self, work, finished):
             # Network queries and config validation must never freeze the GTK loop.
@@ -495,7 +611,7 @@ def main():
             page.append(self.apply_button)
             self.settings_status = self.label('', 'notice')
             page.append(self.settings_status)
-            page.append(self.label('Changes last until you restart. The file guide remains in English.', 'muted'))
+            page.append(self.label('Settings are saved on an installed system. In a live session they last until restart. The file guide remains in English.', 'muted'))
             page.append(self.button('Back', self.return_home))
 
         def show_settings(self, _):

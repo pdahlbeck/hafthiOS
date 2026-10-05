@@ -13,9 +13,9 @@
         "docs/index.md"
       ],
       "details": [
-        "The current image is an x86_64 live preview. It does not install an operating system to a disk.",
-        "The live desktop now includes Niri and Hafþi. Google Chrome is downloaded on first use into the disposable live home.",
-        "The download is a GitHub Actions artifact containing the ISO, checksum and measured size."
+        "The image is an x86_64 live USB with an offline whole-disk installer. Installation erases exactly the disk reviewed and confirmed by the user.",
+        "Documents account setup, BIOS/UEFI boot, settings persistence, lack of Secure Boot/custom partitions/dual boot, and the initial text login.",
+        "Downloads contain an ISO, checksum, measured size, file register and VM diagnostics."
       ]
     },
     {
@@ -71,7 +71,8 @@
         "The temporary build workspace is removed on exit. No selected installation disk is partitioned, formatted or mounted.",
         "Installs Plymouth, applies the quiet boot configuration, and masks the default early quit/wait services. The tty1 getty releases Plymouth with retain-splash just before starting the graphical session.",
         "Packages and validates the full ISO file register with package-inventory.py before calculating the final ISO checksum.",
-        "Includes common Intel, AMD, Atheros, Realtek and Broadcom firmware, Wi-Fi authentication and PipeWire audio. Hardware support still requires real-device testing."
+        "Includes common Intel, AMD, Atheros, Realtek and Broadcom firmware, Wi-Fi authentication and PipeWire audio. Hardware support still requires real-device testing.",
+        "Includes rsync, arch-install-scripts, GRUB and filesystem tools for an offline installed-system copy."
       ]
     },
     {
@@ -89,7 +90,7 @@
         "Missing explanations stop the bundle build, so a new project file cannot silently disappear from the guide.",
         "Copies documented source files into sources/ while preserving their relative paths. The reader never executes these snapshots.",
         "Rejects absolute paths and parent-directory traversal in the catalog.",
-        "The same documentation directory can be copied into a future installed system; the current prototype has no target installation backend."
+        "The disk installer copies the same documentation directory into the installed system."
       ]
     },
     {
@@ -110,7 +111,9 @@
         "Requires the complete register ready marker and more than 1,000 filesystem entries when the guide opens.",
         "Presses F2 to enter Niri, requires the exact Hafþi application ID in the compositor window list, opens Chrome setup through Super+B, and waits for the browser window after an actual download.",
         "Captures the actual SDL window inside Xvfb, because OpenGL scanouts may have no CPU image for QMP screendump. QMP remains responsible for keyboard input.",
-        "Also opens the language and keyboard page using F3 and saves settings-screen.ppm before returning to the guide and desktop."
+        "Also opens the language and keyboard page using F3 and saves settings-screen.ppm before returning to the guide and desktop.",
+        "After testing the live desktop, drives the VM console to install onto its newly created disposable 16 GiB disk. The ISO contains no automatic installer test service.",
+        "Detaches the ISO, boots the disk under BIOS and OVMF UEFI, logs in with a throwaway test password and verifies persisted Swedish settings, ext4 root and removal of live privileges."
       ]
     },
     {
@@ -124,7 +127,7 @@
       "details": [
         "The empty ExecStart= clears the original getty command. The next ExecStart= launches agetty with --autologin hafthi.",
         "%I expands to the instance name, tty1. --noclear keeps the existing console contents.",
-        "This setting is for the disposable live image. It must not be copied unchanged into a future installed desktop.",
+        "This setting is for the disposable live image. It must not be copied unchanged into an installed desktop.",
         "ExecStartPre asks Plymouth to quit while retaining its last frame, releasing graphics before Cage starts. A missing or unavailable Plymouth is nonfatal."
       ]
     },
@@ -158,7 +161,7 @@
     },
     {
       "path": "live/usr/local/bin/hafthios-welcome",
-      "purpose": "Implements the graphical welcome screen, disk preview, proposed-system summary, and offline guide reader.",
+      "purpose": "Implements the live welcome screen, reviewed whole-disk installation, desktop controls and offline guide reader.",
       "when": "Cage launches it on live boot. Run hafthios-welcome --guide to open the guide directly.",
       "connections": [
         "docs/file-guide.json",
@@ -167,17 +170,17 @@
         "scripts/test-boot.py"
       ],
       "details": [
-        "Install Hafþi OS opens a preview flow. It does not install, erase, partition or mount a selected disk.",
         "read_disks uses the read-only lsblk JSON query. It lists writable whole disks and excludes partitions, loop devices and read-only devices.",
-        "The review screen lists the selected disk and the planned Arch/Niri/Hafþi/Chrome desktop.",
         "Network settings launches nmtui in Foot for the live session. Restart calls systemctl reboot.",
         "The guide is read from /usr/share/doc/hafthios/. A search field filters file names and explanations; each article can show its bundled source snapshot.",
         "F1 opens the guide. Serial markers are used by the VM test to verify that the UI and guide loaded.",
         "The guide source viewer recognises binary assets and displays an explanation instead of attempting to show image bytes as UTF-8 text.",
         "The guide defaults to the complete ISO file register. Queries the read-only SQLite database by path, package or image layer, renders 100 rows per page and provides Previous/Next controls. The source guide remains a separate view.",
         "Adds independent English/Swedish interface language and US/Swedish keyboard choices, plus asynchronous network status and configuration.",
-        "Primary live controls have Swedish translations; the file register articles and installer preview remain English. F3 opens settings and Esc returns from settings, network or error pages.",
-        "A scrollable content area keeps controls reachable in small VM windows. A failed desktop shows actual local diagnostics."
+        "A scrollable content area keeps controls reachable in small VM windows. A failed desktop shows actual local diagnostics.",
+        "Install Hafthi OS lists eligible unmounted disks, requests a root-owned plan, reviews full-disk erasure and requires matching passwords and the exact erase phrase.",
+        "Installation runs in a worker with JSON progress. Passwords are passed through stdin, not command arguments or log messages. Close and navigation are blocked while writing.",
+        "The installed desktop omits the installer button; its ready marker reports root filesystem and persistent settings for the VM test."
       ]
     },
     {
@@ -220,7 +223,7 @@
       "details": [
         "The guide documents the project-owned files, not every file provided by Arch packages.",
         "The local bundle includes the guide and source snapshots matching that ISO build.",
-        "The live prototype is ephemeral. A future installer must copy the documentation bundle to the target system."
+        "The live session is ephemeral. The disk installer copies this documentation bundle to the target system."
       ]
     },
     {
@@ -461,7 +464,7 @@
       "details": [
         "Only English/Swedish locales and US/Swedish keyboard layouts are accepted. Language and layout are independent.",
         "Niri validates a temporary configuration before the current user configuration is atomically replaced. Niri watches that file to reload the keyboard.",
-        "The helper writes settings.json and a shell environment file in the disposable user home. It does not mount or modify a target disk."
+        "The helper writes settings.json and a shell environment file in the user home. It does not mount or modify a target disk."
       ]
     },
     {
@@ -490,6 +493,38 @@
         "Uses temporary homes to verify independent language/layout choices, actual shell environment loading, and preservation of previous files after validation fails.",
         "Malformed settings and unsupported values are rejected or replaced with documented defaults.",
         "Mocks compositor and systemd commands to verify that both process failures and failed service results reopen the welcome screen with diagnostics."
+      ]
+    },
+    {
+      "path": "live/usr/local/bin/hafthios-install",
+      "purpose": "Plans and performs an explicitly confirmed offline installation to one entire disk.",
+      "when": "The welcome UI calls list/plan; a confirmed install invokes it through sudo.",
+      "connections": [
+        "live/usr/local/bin/hafthios-welcome",
+        "live/usr/local/bin/hafthios-settings",
+        "scripts/build-iso.sh",
+        "tests/test_install.py"
+      ],
+      "details": [
+        "Eligible targets are canonical, unmounted, writable whole disks of at least 12 GiB without mounted/stacked descendants. The live medium is mounted and excluded.",
+        "Root-only plans expire after 30 minutes and bind disk path, size, model, serial, WWN and device number. Exact typed confirmation and a valid password are checked again before writes.",
+        "Creates BIOS boot, EFI and ext4 partitions, copies the live root and home, installs normal kernel/initramfs/GRUB and retains the offline ISO guide.",
+        "Removes live autologin and passwordless sudo, locks root, sets the hafthi password through stdin, and applies the saved language/layout to the installed home.",
+        "A single-instance lock and consumed plans prevent concurrent/repeated execution. Errors stop installation and may leave the confirmed disk partially written."
+      ]
+    },
+    {
+      "path": "tests/test_install.py",
+      "purpose": "Exercises installer disk-selection and confirmation boundaries without writing real disks.",
+      "when": "Runs locally and in the ISO workflow.",
+      "connections": [
+        "live/usr/local/bin/hafthios-install",
+        "scripts/test-boot.py"
+      ],
+      "details": [
+        "Tests exclusion of live media, mounted roots, swap, readonly/small disks and stacked devices.",
+        "Checks exact confirmation, password constraints, expiry and changed disk identity. Invalid confirmation cannot reach a disk-writing command.",
+        "Uses a temporary target tree to verify removal of live autologin/NOPASSWD and replacement with normal installed kernel and locale settings. The actual install/boot path is exercised in a disposable VM."
       ]
     }
   ]

@@ -2,23 +2,40 @@
 
 A minimal Arch Linux desktop built around Hafþi, Wayland and Chrome.
 
-## First prototype
+## Live USB and disk installation
 
-This is an **x86_64 live USB prototype**, not a finished distribution. Boot into a graphical welcome screen and click **Try the desktop** to use Niri and Hafþi. **Preview installation** lets you choose a disk and review the proposed system. The prototype **does not partition, format or install to any disk**. Its review screen explicitly marks installation as unavailable. This lets us test the live image and interface before adding a destructive installer backend.
+This is an **x86_64 prototype**. Choose **Try the desktop** to use Niri and Hafþi
+from the USB, or **Install Hafþi OS** to install the system on a selected disk.
+The installer erases the **entire selected disk**; dual boot, disk encryption,
+and custom partition layouts are not supported. Back up its contents first.
 
-Click **Try the desktop** (or press **F2**) to enter Niri with Hafþi ready to use. Google Chrome is downloaded directly from Google on first use; connect to the internet and click **Open Google Chrome**. Chrome is not redistributed inside the ISO. The ordinary `hafthi` live user keeps Chrome’s sandbox enabled. Everything in the live home is discarded on restart.
+Only unmounted writable whole disks of at least **12 GiB** are offered. Mounted
+partitions, swap, stacked devices and the live boot medium are excluded. Before
+installation, review the disk and type the exact **ERASE /dev/...** phrase. The
+backend checks the disk identity and current mounts again before writing.
+
+The installer copies the live system offline, creates GPT partitions for BIOS
+and UEFI boot, formats an ext4 root filesystem and an EFI system partition, and
+installs GRUB. It preserves your live home, language, keyboard and the local file
+guide. The account is **hafthi**; choose and repeat your own password. Root is
+locked, normal sudo requires your password, and live automatic login is removed.
+Restart, remove the USB/ISO, and log in as hafthi to enter Niri.
+
+Google Chrome is downloaded directly from Google on first use. Chrome is not
+redistributed inside the ISO. Its normal user sandbox remains enabled. Live
+changes disappear on restart; settings on the installed disk persist.
 
 ## Offline file guide
 
 The English **Hafþi OS File Guide** opens a complete register of the ISO files. The separate **Project source guide** explains the project files: their purpose, when they are used, connected files and implementation details. Click **Hafþi OS Guide** on the welcome screen or press **F1**. In the project source guide, use **Show source** to read source snapshots matching that ISO, without a browser or internet connection.
 
-The guide is bundled at `/usr/share/doc/hafthios/` in the live image. The future disk installer must also copy this directory into the installed system. The current prototype does not install to disk. See [docs/index.md](docs/index.md) for maintenance details.
+The guide is bundled at `/usr/share/doc/hafthios/` in the live image. The disk installer copies this directory into the installed system. The register describes the source ISO, not a fresh inventory of later installed-system changes. See [docs/index.md](docs/index.md) for maintenance details.
 
 ## Download and try
 
 Open this repository's **Actions → Build prototype ISO**, choose a successful run, and download **hafthiOS-prototype** while signed in to GitHub. Extract the artifact archive to find the `.iso`, its SHA256 file, and size report.
 
-First test in a virtual machine: select the ISO as an optical boot image, enable 3D graphics acceleration, give the VM 4 GB RAM and a disposable virtual disk. Use an **x86_64 VM**; Apple Silicon requires x86 emulation for this image. Native ARM images are not available yet. Both BIOS and UEFI boot files are built, but boot compatibility must be tested.
+First test in a virtual machine: select the ISO as an optical boot image, enable 3D graphics acceleration, give the VM 4 GB RAM and a disposable virtual disk. Use an **x86_64 VM**; Apple Silicon requires x86 emulation for this image. Native ARM images are not available yet. CI boots the live ISO, installs it on a disposable disk, and boots that disk without the ISO using both BIOS and UEFI firmware.
 
 The ISO size is measured on each build. Fitting a marketed 1 GB USB means staying below **1,000,000,000 bytes**; this is a target, not a promise. The live session has no persistence. Wireless, graphics hardware and Secure Boot compatibility are not validated yet.
 
@@ -35,7 +52,7 @@ Output is in `out/`. The script copies Archiso's baseline profile into a tempora
 
 - Boot and validate the graphical prototype in a VM.
 - Test live language, keyboard and network settings on real hardware.
-- A reviewed installer backend with explicit disk-erasure confirmation.
+- Test the whole-disk installer on disposable physical test hardware.
 - Test the Niri desktop, bundled Hafþi and first-use Chrome download on real hardware.
 - Test real hardware and minimize the measured ISO size.
 
@@ -64,7 +81,7 @@ Choose **Project source guide** for the separate, detailed source explanations a
 - **Super + Left / Right**: switch columns.
 - **Super + Q**: close the focused window.
 
-Use at least **4 GB RAM** for the desktop and first-use browser download. The live writable layer can use up to half the RAM. Niri requires accelerated graphics, including virtual 3D acceleration in a VM. The welcome screen can run without it. The live session includes Fish, audio services, common Intel/AMD graphics and Wi-Fi firmware, and normal Arch package tools; it does not install anything onto a target disk. Hafþi is built from a pinned source commit in `scripts/build-hafthi.sh` and retains its MIT license.
+Use at least **4 GB RAM** for the desktop and first-use browser download. The live writable layer can use up to half the RAM. Niri requires accelerated graphics, including virtual 3D acceleration in a VM. The welcome screen can run without it. The live session includes Fish, audio services, common Intel/AMD graphics and Wi-Fi firmware, and normal Arch package tools; disk installation starts only after the explicit erase confirmation. Hafþi is built from a pinned source commit in `scripts/build-hafthi.sh` and retains its MIT license.
 
 ## Live settings
 
@@ -77,8 +94,7 @@ and installation preview remain in English. The locale also applies to new
 terminal sessions. Existing applications retain their environment.
 
 The Niri keyboard changes immediately after **Apply**. Before entering Niri,
-the welcome screen's keyboard changes when that screen is reopened. Settings
-are stored only in the live home and disappear on restart.
+the welcome screen's keyboard changes when that screen is reopened. Settings are stored in your home. They disappear when restarting the live ISO, but persist on an installed disk.
 
 **Network settings** shows current devices and connections. **Configure connection**
 opens NetworkManager's connection tool for Wi-Fi and Ethernet; the status refreshes
@@ -88,3 +104,16 @@ If Niri fails to start, the welcome screen returns with graphics advice and
 actual diagnostics. In UTM use **virtio-vga-gl (GPU Supported)** and fully restart
 the VM after changing its display adapter. Logs remain in the live home under
 `~/.local/state/hafthios/` until restart.
+
+## Installer testing and limits
+
+Start with an empty disposable VM disk of at least 16 GiB. Secure Boot is not
+supported. The installer writes a removable UEFI fallback loader without changing
+firmware NVRAM. The BIOS boot partition supports legacy firmware on the same disk.
+At present the installed login is a text login followed by the Niri desktop.
+
+The automated VM test uses a throwaway password only for its newly created virtual
+disk. There is no automatic disk-erasing test service or installer backdoor in the
+ISO. It verifies real disk boot with the optical image absent, password login,
+Swedish language/layout persistence, ext4 root and removal of the live login/sudo
+policy. Real hardware still needs validation before using disks with valuable data.

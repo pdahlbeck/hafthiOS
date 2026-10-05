@@ -1,0 +1,249 @@
+#!/usr/bin/env python3
+"""Whole-disk offline installer. Planning is read-only; install requires a saved plan and typed confirmation."""
+import argparse
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+
+STATE = Path('/run/hafthios-installer')
+MIN_SIZE = 12 * 1024**3
+COLUMNS = 'PATH,TYPE,RO,SIZE,MODEL,SERIAL,WWN,MAJ:MIN,MOUNTPOINTS'
+
+
+def command(args, *, input=None):
+    result = subprocess.run(args, input=input, capture_output=True, text=True, timeout=1800)
+    if result.returncode:
+        # Command input can contain a password. Never print it or CalledProcessError.
+        raise RuntimeError(f'{args[0]} failed: ' + (result.stderr or result.stdout)[-3000:])
+    return result.stdout
+
+
+def descendants(device):
+    yield device
+    for child in device.get('children', []):
+        yield from descendants(child)
+
+
+def eligible_disks(payload):
+    return [disk for disk in payload.get('blockdevices', [])
+            if disk.get('type') == 'disk' and not disk.get('ro')
+            and int(disk.get('size') or 0) >= MIN_SIZE
+            and all(not any(item.get('mountpoints') or []) for item in descendants(disk))
+            and all(item.get('type') in ('disk', 'part') for item in descendants(disk))]
+
+
+def read_disks():
+    return eligible_disks(json.loads(command(['lsblk', '--json', '--bytes', '--output', COLUMNS])))
+
+
+def identity(disk):
+    keys = ('path', 'size', 'model', 'serial', 'wwn', 'maj:min')
+    return {key: disk.get(key) for key in keys}
+
+
+def selected_disk(path):
+    # Accept exactly the canonical whole-disk path displayed by lsblk.
+    for disk in read_disks():
+        if disk['path'] == path and Path(path).resolve().as_posix() == path:
+            info = os.stat(path)
+            if not stat.S_ISBLK(info.st_mode):
+                break
+            return disk
+    raise ValueError('This disk is unavailable, mounted, too small, or used by the running system.')
+
+
+def live_only():
+    if os.geteuid() != 0:
+        raise PermissionError('Run this helper through sudo from the live session.')
+    if Path('/etc/hafthios-installed').exists() or not Path('/run/archiso/bootmnt').is_mount():
+        raise RuntimeError('Disk installation is available only from the live ISO.')
+
+
+def make_plan(path):
+    live_only()
+    disk = selected_disk(path)
+    STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
+    token = os.urandom(16).hex()
+    plan = {'token': token, 'disk': identity(disk), 'created': time.time(),
+            'layout': ['1 MiB BIOS boot', '512 MiB EFI system', 'Remaining space: ext4 root'],
+            'user': 'hafthi', 'confirmation': 'ERASE ' + path}
+    target = STATE / (token + '.json')
+    target.write_text(json.dumps(plan))
+    target.chmod(0o600)
+    return plan
+
+
+def validate_request(plan, request, disk):
+    if time.time() - plan['created'] > 1800:
+        raise ValueError('The installation plan has expired. Select the disk again.')
+    if identity(disk) != plan['disk']:
+        raise ValueError('The selected disk has changed. Select it again.')
+    if request.get('confirmation') != plan['confirmation']:
+        raise ValueError('Type the exact ERASE confirmation shown on the review page.')
+    password = request.get('password', '')
+    if not isinstance(password, str) or len(password) < 8 or any(c in password for c in '\n\r\0'):
+        raise ValueError('Choose a password of at least 8 characters without line breaks.')
+    settings = request.get('settings', {})
+    if settings.get('language') not in ('en', 'sv') or settings.get('keyboard') not in ('us', 'se'):
+        raise ValueError('Unsupported language or keyboard layout.')
+
+
+def phase(message):
+    print(json.dumps({'phase': message}), flush=True)
+
+
+def partition_path(disk, number):
+    return disk + ('p' if disk[-1].isdigit() else '') + str(number)
+
+
+def write(root, path, content, mode=0o644):
+    target = root / path.lstrip('/')
+    target.parent.mkdir(parents=True, exist_ok=True)
+    # Copied live config files can be symlinks into /run. Never follow them.
+    target.unlink(missing_ok=True)
+    target.write_text(content)
+    target.chmod(mode)
+
+
+def configure(root, request):
+    phase('Saving your account and settings')
+    # Remove live boot/session settings. The installed account requires its password.
+    for path in ('etc/systemd/system/getty@tty1.service.d/autologin.conf',
+                 'etc/sudoers.d/hafthios-live', 'etc/mkinitcpio.conf.d/archiso.conf',
+                 'root/customize_airootfs.sh', 'root/.bash_profile',
+                 'etc/systemd/system/plymouth-quit.service',
+                 'etc/systemd/system/plymouth-quit-wait.service',
+                 'etc/machine-id', 'var/lib/dbus/machine-id'):
+        (root / path).unlink(missing_ok=True)
+    for path in (root / 'etc/systemd/system').rglob('*'):
+        if path.is_symlink() and ('archiso' in path.name or 'pacman-init' in path.name or 'choose-mirror' in path.name):
+            path.unlink()
+    write(root, '/etc/hafthios-installed', 'Hafthi OS installed system\n')
+    write(root, '/etc/hostname', 'hafthios\n')
+    language = request['settings']['language']
+    keyboard = request['settings']['keyboard']
+    locale = 'sv_SE.UTF-8' if language == 'sv' else 'en_US.UTF-8'
+    write(root, '/etc/locale.conf', f'LANG={locale}\n')
+    write(root, '/etc/vconsole.conf', f'KEYMAP={keyboard}\n')
+    write(root, '/etc/sudoers.d/hafthios-wheel', '%wheel ALL=(ALL:ALL) ALL\n', 0o440)
+    write(root, '/etc/systemd/system/getty@tty1.service.d/plymouth.conf',
+          '[Service]\nExecStartPre=-/usr/bin/plymouth quit --retain-splash\n')
+    write(root, '/home/hafthi/.bash_profile',
+          'if [[ -f "$HOME/.config/hafthios/environment" ]]; then source "$HOME/.config/hafthios/environment"; fi\n'
+          'if [[ $(tty) == /dev/tty1 && -z ${HAFTHIOS_SESSION_STARTED:-} ]]; then\n'
+          ' export HAFTHIOS_SESSION_STARTED=1\n niri-session\nfi\n')
+    write(root, '/etc/mkinitcpio.conf',
+          'MODULES=()\nBINARIES=()\nFILES=()\nHOOKS=(base udev plymouth autodetect microcode modconf kms keyboard keymap consolefont block filesystems fsck)\n')
+    write(root, '/etc/mkinitcpio.d/linux.preset',
+          "ALL_config='/etc/mkinitcpio.conf'\nALL_kver='/boot/vmlinuz-linux'\nPRESETS=('default')\ndefault_image='/boot/initramfs-linux.img'\n")
+    kernels = list((root / 'usr/lib/modules').glob('*/vmlinuz'))
+    if len(kernels) != 1:
+        raise RuntimeError('Expected exactly one Linux kernel in the live system.')
+    shutil.copyfile(kernels[0], root / 'boot/vmlinuz-linux')
+    write(root, '/etc/default/grub',
+          'GRUB_DEFAULT=0\nGRUB_TIMEOUT=2\nGRUB_DISTRIBUTOR="Hafthi OS"\n'
+          'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"\nGRUB_CMDLINE_LINUX=""\n')
+    # Keep the offline file guide and current live home, including Chrome if downloaded.
+    command(['arch-chroot', str(root), 'passwd', '-l', 'root'])
+    command(['arch-chroot', str(root), 'chpasswd'], input='hafthi:' + request['password'] + '\n')
+    command(['arch-chroot', str(root), 'runuser', '-u', 'hafthi', '--',
+             'python3', '/usr/local/bin/hafthios-settings', '--language', language, '--keyboard', keyboard])
+    command(['arch-chroot', str(root), 'chown', '-R', 'hafthi:hafthi', '/home/hafthi'])
+    command(['arch-chroot', str(root), 'systemctl', 'enable', 'NetworkManager.service'])
+    command(['arch-chroot', str(root), 'systemctl', 'set-default', 'multi-user.target'])
+    command(['arch-chroot', str(root), 'systemd-machine-id-setup'])
+    phase('Building the installed boot image')
+    command(['arch-chroot', str(root), 'mkinitcpio', '-P'])
+
+
+def install(request):
+    live_only()
+    token = request.get('token', '')
+    if not isinstance(token, str) or not re.fullmatch('[0-9a-f]{32}', token):
+        raise ValueError('Invalid plan token')
+    plan_path = STATE / (token + '.json')
+    plan = json.loads(plan_path.read_text())
+    disk = selected_disk(plan['disk']['path'])
+    validate_request(plan, request, disk)
+    # A single installer instance may write disks. Consume the plan before changes.
+    with (STATE / 'install.lock').open('w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        disk = selected_disk(plan['disk']['path'])
+        validate_request(plan, request, disk)
+        plan_path.unlink()
+        device = disk['path']
+        phase('Partitioning the confirmed disk')
+        command(['sfdisk', '--lock=yes', '--wipe', 'always', device], input=
+                'label: gpt\nsize=1MiB,type=21686148-6449-6E6F-744E-656564454649\n'
+                'size=512MiB,type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B\n'
+                'type=0FC63DAF-8483-4772-8E79-3D69D8477DE4\n')
+        command(['udevadm', 'settle'])
+        efi, system = partition_path(device, 2), partition_path(device, 3)
+        for _ in range(50):
+            if Path(efi).exists() and Path(system).exists():
+                break
+            time.sleep(0.1)
+        else:
+            raise RuntimeError('New partitions did not appear')
+        phase('Formatting the confirmed disk')
+        command(['mkfs.fat', '-F', '32', '-n', 'HAFTHI_EFI', efi])
+        command(['mkfs.ext4', '-F', '-L', 'hafthios', system])
+        with tempfile.TemporaryDirectory(prefix='target-', dir=STATE) as temporary:
+            root = Path(temporary)
+            command(['mount', system, str(root)])
+            try:
+                (root / 'boot/efi').mkdir(parents=True)
+                command(['mount', efi, str(root / 'boot/efi')])
+                phase('Copying Hafthi OS and the offline file guide')
+                command(['rsync', '-aHAXx', '--numeric-ids',
+                         '--exclude=/dev/*', '--exclude=/proc/*', '--exclude=/sys/*',
+                         '--exclude=/run/*', '--exclude=/tmp/*', '--exclude=/mnt/*',
+                         '--exclude=/media/*', '--exclude=/lost+found',
+                         '--exclude=/etc/resolv.conf', '--exclude=/var/tmp/*',
+                         '--exclude=/var/cache/pacman/pkg/*', '/', str(root) + '/'])
+                command(['rsync', '-aHAX', '--numeric-ids', '/home/hafthi/', str(root / 'home/hafthi') + '/'])
+                # Archiso /etc/resolv.conf can be a live-runtime link. Install a normal resolver file.
+                resolver = Path('/etc/resolv.conf').read_text()
+                write(root, '/etc/resolv.conf', resolver)
+                root_uuid = command(['blkid', '-s', 'UUID', '-o', 'value', system]).strip()
+                efi_uuid = command(['blkid', '-s', 'UUID', '-o', 'value', efi]).strip()
+                write(root, '/etc/fstab', f'UUID={root_uuid} / ext4 defaults 0 1\nUUID={efi_uuid} /boot/efi vfat umask=0077 0 2\n')
+                configure(root, request)
+                phase('Installing BIOS and UEFI boot loaders')
+                command(['arch-chroot', str(root), 'grub-install', '--target=i386-pc', device])
+                command(['arch-chroot', str(root), 'grub-install', '--target=x86_64-efi',
+                         '--efi-directory=/boot/efi', '--bootloader-id=hafthios', '--removable', '--no-nvram'])
+                command(['arch-chroot', str(root), 'grub-mkconfig', '-o', '/boot/grub/grub.cfg'])
+                command(['sync'])
+            finally:
+                command(['umount', '-R', str(root)])
+    print(json.dumps({'complete': True, 'disk': device, 'user': 'hafthi'}), flush=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=('list', 'plan', 'install'))
+    parser.add_argument('disk', nargs='?')
+    args = parser.parse_args()
+    if args.action == 'list':
+        print(json.dumps({'disks': read_disks()}))
+    elif args.action == 'plan':
+        print(json.dumps(make_plan(args.disk)))
+    else:
+        install(json.load(sys.stdin))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception as error:
+        print(json.dumps({'error': str(error)}), flush=True)
+        sys.exit(1)
