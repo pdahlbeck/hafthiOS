@@ -53,6 +53,7 @@ jobs:
             out/chrome-screen.ppm
             out/boot-serial.log
             out/qemu.log
+            out/installer-*.ppm
             out/installed-*.ppm
             out/installed-*.log
             out/size.txt
@@ -77,6 +78,7 @@ jobs:
             out/chrome-screen.ppm
             out/boot-serial.log
             out/qemu.log
+            out/installer-*.ppm
             out/installed-*.ppm
             out/installed-*.log
           compression-level: 0

@@ -189,6 +189,28 @@ with tempfile.TemporaryDirectory() as tmp:
             raise RuntimeError('ISO register is unexpectedly small')
         time.sleep(3)
         capture_screen(sock_path, out / 'guide-screen.ppm')
+        qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'f4'}]})
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            text = serial_path.read_text(errors='replace')
+            if 'HAFTHIOS_DISKS_READY ' in text:
+                available = json.loads(text.split('HAFTHIOS_DISKS_READY ')[-1].splitlines()[0])
+                if available != ['/dev/vda']:
+                    raise RuntimeError('Installer offered unexpected target disks: ' + repr(available))
+                break
+            time.sleep(1)
+        else:
+            raise RuntimeError('Installer disk selection did not load')
+        capture_screen(sock_path, out / 'installer-disks.ppm')
+        qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'ret'}]})
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if 'HAFTHIOS_REVIEW_READY ERASE /dev/vda' in serial_path.read_text(errors='replace'):
+                break
+            time.sleep(1)
+        else:
+            raise RuntimeError('Installer review did not open')
+        capture_screen(sock_path, out / 'installer-review.ppm')
         qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'f2'}]})
         deadline = time.monotonic() + 180
         while time.monotonic() < deadline:

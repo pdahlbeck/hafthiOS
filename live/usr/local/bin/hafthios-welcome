@@ -463,6 +463,13 @@ def main():
                 self.disk_choice.set_model(Gtk.StringList.new(labels))
                 self.disk_choice.set_selected(0)
                 self.continue_button.set_sensitive(bool(self.disks))
+                if self.disks:
+                    self.continue_button.grab_focus()
+                try:
+                    with open('/dev/ttyS0', 'w') as serial:
+                        serial.write('HAFTHIOS_DISKS_READY ' + json.dumps([d['path'] for d in self.disks]) + '\n')
+                except OSError:
+                    pass
                 self.disk_status.set_text('Could not read disks: ' + error if error else 'At least 12 GiB required. Back up any files before erasing a disk.')
                 return False
             self.settings_task(self.installer['read_disks'], finished)
@@ -522,6 +529,11 @@ def main():
                 self.install_back.set_sensitive(True)
                 self.install_restart.set_visible(False)
                 self.pages.set_visible_child_name('review')
+                try:
+                    with open('/dev/ttyS0', 'w') as serial:
+                        serial.write('HAFTHIOS_REVIEW_READY ' + plan['confirmation'] + '\n')
+                except OSError:
+                    pass
                 return False
             self.settings_task(plan, finished)
 
