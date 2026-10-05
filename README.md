@@ -117,3 +117,9 @@ disk. There is no automatic disk-erasing test service or installer backdoor in t
 ISO. It verifies real disk boot with the optical image absent, password login,
 copied Chrome profile, Swedish language/layout persistence, ext4 root and removal of the live login/sudo
 policy. Real hardware still needs validation before using disks with valuable data.
+
+For test-script-only corrections, the build workflow can reuse an existing ISO
+with the `iso_run_id` manual input, or a commit message containing
+`[retest-iso:RUN_ID]`. This downloads the original ISO unchanged and runs the
+current VM tests against it. `iso-source.txt` records the original build run;
+the source snapshots inside the ISO still describe that original build.

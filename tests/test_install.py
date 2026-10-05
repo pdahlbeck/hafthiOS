@@ -1,4 +1,6 @@
 import copy
+import ast
+from types import SimpleNamespace
 import json
 from pathlib import Path
 import runpy
@@ -41,6 +43,21 @@ class InstallationSafetyTests(unittest.TestCase):
         for req, dev, saved in cases:
             with self.assertRaises(ValueError):
                 backend['validate_request'](saved, req, dev)
+
+    def test_vm_console_handles_the_complete_install_command_before_sending_keys(self):
+        tree = ast.parse((ROOT / 'scripts/test-boot.py').read_text())
+        function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'type_text')
+        namespace = {'time': SimpleNamespace(sleep=lambda _: None)}
+        events = []
+        namespace['qmp_request'] = lambda _socket, _name, args: events.append(args)
+        exec(compile(ast.Module(body=[function], type_ignores=[]), '<console test>', 'exec'), namespace)
+        namespace['type_text']('mock-socket', 'echo Q+/== | base64 -d | sudo python3 > /dev/ttyS0 2>&1')
+        self.assertTrue(any(event['keys'] == [{'type':'qcode','data':'shift'}, {'type':'qcode','data':'7'}] for event in events))
+        self.assertEqual(events[-1]['keys'], [{'type':'qcode','data':'ret'}])
+        events.clear()
+        with self.assertRaises(ValueError):
+            namespace['type_text']('mock-socket', 'echo unsupported!')
+        self.assertEqual(events, [])
 
     def test_partition_names_include_digit_separator_only_when_required(self):
         self.assertEqual(backend['partition_path']('/dev/vda',3), '/dev/vda3')

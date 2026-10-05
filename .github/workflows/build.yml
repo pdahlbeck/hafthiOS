@@ -3,8 +3,14 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      iso_run_id:
+        description: 'Existing build run to retest (blank builds a new ISO)'
+        required: false
+        type: string
 permissions:
   contents: read
+  actions: read
 jobs:
   iso:
     runs-on: ubuntu-24.04
@@ -16,7 +22,44 @@ jobs:
           python3 -m unittest discover -s tests -v
           python3 -m py_compile live/usr/local/bin/hafthios-welcome
           bash -n scripts/build-iso.sh live/usr/local/bin/hafthios-session live/root/.bash_profile
+      - name: Select existing ISO for test-only changes
+        id: source_iso
+        env:
+          PUSH_MESSAGE: ${{ github.event.head_commit.message }}
+          DISPATCH_RUN: ${{ inputs.iso_run_id }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          match = re.search(r'\[retest-iso:(\d+)\]', os.environ.get('PUSH_MESSAGE', ''))
+          run_id = os.environ.get('DISPATCH_RUN', '') or (match.group(1) if match else '')
+          if run_id and not run_id.isdecimal():
+              raise SystemExit('ISO run ID must be numeric')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('run_id=' + run_id + '\n')
+          PY
+      - name: Download existing ISO without rebuilding it
+        if: steps.source_iso.outputs.run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: hafthiOS-prototype
+          path: out
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.source_iso.outputs.run_id }}
+      - name: Clear previous VM diagnostics
+        if: steps.source_iso.outputs.run_id != ''
+        env:
+          ISO_SOURCE_RUN: ${{ steps.source_iso.outputs.run_id }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          for path in Path('out').iterdir():
+              if path.suffix in ('.ppm', '.png', '.log'):
+                  path.unlink()
+          Path('out/iso-source.txt').write_text('Original ISO build run: ' + os.environ['ISO_SOURCE_RUN'] + '\n')
+          PY
       - name: Build with official Archiso in an isolated container
+        if: steps.source_iso.outputs.run_id == ''
         run: |
           docker run --rm --privileged \
             -v "$PWD:/project" -w /project archlinux:base \
@@ -57,6 +100,7 @@ jobs:
             out/installed-*.ppm
             out/installed-*.log
             out/size.txt
+            out/iso-source.txt
             out/*file-register*
           retention-days: 14
       - name: Upload bootable prototype
@@ -68,6 +112,7 @@ jobs:
             out/*.iso
             out/*.sha256
             out/size.txt
+            out/iso-source.txt
             out/*file-register*
             out/boot-screen.ppm
             out/splash-screen.png

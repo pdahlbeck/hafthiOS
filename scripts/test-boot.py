@@ -44,7 +44,10 @@ def qmp_request(sock_path, name, arguments):
 def type_text(sock_path, text):
     special = {' ': ('spc', False), '-': ('minus', False), '=': ('equal', False),
                '+': ('equal', True), '/': ('slash', False), '|': ('backslash', True),
-               '>': ('dot', True), '.': ('dot', False), '_': ('minus', True)}
+               '>': ('dot', True), '.': ('dot', False), '_': ('minus', True), '&': ('7', True)}
+    unknown = set(text) - set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') - set(special)
+    if unknown:
+        raise ValueError('Unsupported VM console characters: ' + repr(sorted(unknown)))
     for character in text:
         if character.isalnum():
             key, shift = character.lower(), character.isupper()
