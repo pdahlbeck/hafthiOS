@@ -135,7 +135,8 @@ def configure(root, request):
     keyboard = request['settings']['keyboard']
     locale = 'sv_SE.UTF-8' if language == 'sv' else 'en_US.UTF-8'
     write(root, '/etc/locale.conf', f'LANG={locale}\n')
-    write(root, '/etc/vconsole.conf', f'KEYMAP={keyboard}\n')
+    console_keymap = 'sv-latin1' if keyboard == 'se' else 'us'
+    write(root, '/etc/vconsole.conf', f'KEYMAP={console_keymap}\n')
     write(root, '/etc/sudoers.d/hafthios-wheel', '%wheel ALL=(ALL:ALL) ALL\n', 0o440)
     write(root, '/etc/systemd/system/getty@tty1.service.d/plymouth.conf',
           '[Service]\nExecStartPre=-/usr/bin/plymouth quit --retain-splash\n')

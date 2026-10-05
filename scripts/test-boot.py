@@ -252,11 +252,16 @@ plan=backend['make_plan']('/dev/vda')
 backend['install']({'token':plan['token'],'confirmation':plan['confirmation'],'password':'testpassword123','settings':{'language':'sv','keyboard':'se'}})
 with open('/dev/ttyS0','w') as serial: serial.write('HAFTHIOS_INSTALL_OK\\n')
 """
+        script = 'import traceback\ntry:\n' + '\n'.join('    ' + line for line in script.splitlines()) + '\nexcept Exception:\n    traceback.print_exc()\n    print("HAFTHIOS_INSTALL_ERROR", flush=True)\n'
         encoded = base64.b64encode(script.encode()).decode()
         type_text(sock_path, 'echo ' + encoded + ' | base64 -d | sudo python3 > /dev/ttyS0 2>&1')
         deadline = time.monotonic() + 900
         while time.monotonic() < deadline:
-            if 'HAFTHIOS_INSTALL_OK' in serial_path.read_text(errors='replace'):
+            installation_log = serial_path.read_text(errors='replace')
+            if 'HAFTHIOS_INSTALL_ERROR' in installation_log:
+                capture_screen(sock_path, out / 'installer-failure.ppm')
+                raise RuntimeError('Disk installation failed: ' + installation_log[-5000:])
+            if 'HAFTHIOS_INSTALL_OK' in installation_log:
                 break
             if process.poll() is not None:
                 raise RuntimeError('Live VM exited during installation')

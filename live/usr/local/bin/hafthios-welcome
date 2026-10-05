@@ -298,7 +298,7 @@ def main():
             columns.set_end_child(reading)
             page.append(columns)
             controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
-            controls.append(self.button('Back to welcome', lambda _: self.pages.set_visible_child_name('desktop' if '--desktop' in sys.argv else 'welcome')))
+            controls.append(self.button('Back to welcome', self.return_home))
             self.source_button = self.button('Show source', self.toggle_guide_source)
             controls.append(self.source_button)
             self.inventory_previous = self.button('Previous', lambda _: self.inventory_page(-1))
@@ -607,7 +607,7 @@ def main():
             threading.Thread(target=worker, daemon=True).start()
 
         def return_home(self, _):
-            self.pages.set_visible_child_name('desktop' if '--desktop' in sys.argv else 'welcome')
+            self.pages.set_visible_child_name('desktop' if '--desktop' in sys.argv or Path('/etc/hafthios-installed').exists() else 'welcome')
 
         def build_settings_page(self):
             page = self.page('settings', 'Settings', 'Choose the language and keyboard for this live session.')

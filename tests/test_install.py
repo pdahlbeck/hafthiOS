@@ -77,6 +77,7 @@ class InstallationSafetyTests(unittest.TestCase):
             self.assertNotIn('NOPASSWD', (root/'etc/sudoers.d/hafthios-wheel').read_text())
             self.assertNotIn('archiso', (root/'etc/mkinitcpio.conf').read_text())
             self.assertEqual((root/'etc/locale.conf').read_text(), 'LANG=sv_SE.UTF-8\n')
+            self.assertEqual((root/'etc/vconsole.conf').read_text(), 'KEYMAP=sv-latin1\n')
             self.assertIn('niri-session', (root/'home/hafthi/.bash_profile').read_text())
             self.assertTrue(any(args[-1:] == ['chpasswd'] and kw['input'].startswith('hafthi:') for args,kw in commands))
             self.assertTrue(any('runuser' in args and 'sv' in args and 'se' in args for args,kw in commands))
