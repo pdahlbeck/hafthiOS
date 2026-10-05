@@ -123,3 +123,7 @@ with the `iso_run_id` manual input, or a commit message containing
 `[retest-iso:RUN_ID]`. This downloads the original ISO unchanged and runs the
 current VM tests against it. `iso-source.txt` records the original build run;
 the source snapshots inside the ISO still describe that original build.
+
+A reused-ISO installation retest uses KVM when the runner supports it, with TCG
+as fallback. Ship animation and Esc toggling remain part of a full TCG build;
+the faster KVM retest checks the installer, applications and BIOS/UEFI disk boot.

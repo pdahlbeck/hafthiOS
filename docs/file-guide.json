@@ -49,7 +49,8 @@
         "The output is handed back to the runner for the VM test. The VM uses a temporary virtual disk, not a host disk.",
         "hafthiOS-prototype contains the ISO; hafthiOS-preview contains the screenshot, serial log and size report. Artifacts currently expire after 14 days.",
         "A successful build and BIOS VM test do not establish compatibility with every graphics card, wireless device, UEFI firmware or Secure Boot setup.",
-        "Test-script-only corrections can retest an unchanged ISO from the same repository using iso_run_id or [retest-iso:RUN_ID]. The artifact records the original build run in iso-source.txt; embedded source snapshots remain those of the original ISO."
+        "Test-script-only corrections can retest an unchanged ISO from the same repository using iso_run_id or [retest-iso:RUN_ID]. The artifact records the original build run in iso-source.txt; embedded source snapshots remain those of the original ISO.",
+        "A reused-ISO retest may use KVM for disk installation and BIOS/UEFI boot, falling back to TCG. Ship animation and Esc toggling are checked by the full TCG build. Failed VM screens are captured and OCR text is written to diagnostics."
       ]
     },
     {

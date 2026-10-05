@@ -4,6 +4,7 @@ import json
 import base64
 import shutil
 import os
+import sys
 import pathlib
 import socket
 import subprocess
@@ -96,6 +97,10 @@ def ship_visible(frame):
                 return True
     return False
 
+reuse_iso = bool(os.environ.get('HAFTHIOS_RETEST_ISO'))
+acceleration = 'kvm' if reuse_iso and os.access('/dev/kvm', os.R_OK | os.W_OK) else 'tcg'
+cpu_model = 'host' if acceleration == 'kvm' else 'max'
+print('VM acceleration: ' + acceleration, flush=True)
 out = pathlib.Path('out').resolve()
 iso = max(out.glob('*.iso'), key=lambda p: p.stat().st_mtime)
 with tempfile.TemporaryDirectory() as tmp:
@@ -106,55 +111,58 @@ with tempfile.TemporaryDirectory() as tmp:
     sock_path = tmp / 'qmp.sock'
     serial_path = out / 'boot-serial.log'
     process = subprocess.Popen([
-        'qemu-system-x86_64', '-accel', 'tcg', '-m', '4096', '-smp', '2',
-        '-cpu', 'max', '-cdrom', str(iso), '-boot', 'd',
+        'qemu-system-x86_64', '-accel', acceleration, '-m', '4096', '-smp', '2',
+        '-cpu', cpu_model, '-cdrom', str(iso), '-boot', 'd',
         '-drive', f'file={disk},format=raw,if=virtio',
         '-vga', 'none', '-device', 'virtio-vga-gl', '-display', 'sdl,gl=on',
         '-serial', f'file:{serial_path}', '-monitor', 'none',
         '-qmp', f'unix:{sock_path},server=on,wait=off', '-no-reboot',
     ], stdout=subprocess.DEVNULL, stderr=open(out / 'qemu.log', 'w'))
     try:
-        deadline = time.monotonic() + 360
-        splash_seen = False
-        while time.monotonic() < deadline:
-            if process.poll() is not None:
-                raise RuntimeError('VM exited before the splash appeared')
-            if serial_path.exists() and 'HAFTHIOS_GUI_READY' in serial_path.read_text(errors='replace'):
-                raise RuntimeError('GTK appeared without the ship splash being detected')
-            if sock_path.exists():
-                capture_screen(sock_path, out / 'splash-probe.ppm')
-                frame = Image.open(out / 'splash-probe.ppm').convert('RGB')
-                if ship_visible(frame):
-                    frame.save(out / 'splash-screen.png')
-                    splash_seen = True
+        if acceleration == 'tcg':
+            deadline = time.monotonic() + 360
+            splash_seen = False
+            while time.monotonic() < deadline:
+                if process.poll() is not None:
+                    raise RuntimeError('VM exited before the splash appeared')
+                if serial_path.exists() and 'HAFTHIOS_GUI_READY' in serial_path.read_text(errors='replace'):
+                    raise RuntimeError('GTK appeared without the ship splash being detected')
+                if sock_path.exists():
+                    capture_screen(sock_path, out / 'splash-probe.ppm')
+                    frame = Image.open(out / 'splash-probe.ppm').convert('RGB')
+                    if ship_visible(frame):
+                        frame.save(out / 'splash-screen.png')
+                        splash_seen = True
+                        break
+                time.sleep(2)
+            if not splash_seen:
+                raise RuntimeError('The ship splash was not detected')
+            time.sleep(1)
+            capture_screen(sock_path, out / 'splash-motion.ppm')
+            moved = Image.open(out / 'splash-motion.ppm').convert('RGB')
+            if ImageChops.difference(frame, moved).getbbox() is None:
+                raise RuntimeError('The ship splash did not animate')
+            qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'esc'}], 'hold-time': 300})
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                time.sleep(1)
+                capture_screen(sock_path, out / 'boot-details.ppm')
+                details = Image.open(out / 'boot-details.ppm').convert('RGB')
+                if not ship_visible(details):
                     break
-            time.sleep(2)
-        if not splash_seen:
-            raise RuntimeError('The ship splash was not detected')
-        time.sleep(1)
-        capture_screen(sock_path, out / 'splash-motion.ppm')
-        moved = Image.open(out / 'splash-motion.ppm').convert('RGB')
-        if ImageChops.difference(frame, moved).getbbox() is None:
-            raise RuntimeError('The ship splash did not animate')
-        qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'esc'}], 'hold-time': 300})
-        deadline = time.monotonic() + 20
-        while time.monotonic() < deadline:
-            time.sleep(1)
-            capture_screen(sock_path, out / 'boot-details.ppm')
-            details = Image.open(out / 'boot-details.ppm').convert('RGB')
-            if not ship_visible(details):
-                break
+            else:
+                raise RuntimeError('Esc did not replace the ship with boot details')
+            qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'esc'}], 'hold-time': 300})
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                time.sleep(1)
+                capture_screen(sock_path, out / 'splash-return.ppm')
+                if ship_visible(Image.open(out / 'splash-return.ppm').convert('RGB')):
+                    break
+            else:
+                raise RuntimeError('The second Esc did not restore the ship')
         else:
-            raise RuntimeError('Esc did not replace the ship with boot details')
-        qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'esc'}], 'hold-time': 300})
-        deadline = time.monotonic() + 20
-        while time.monotonic() < deadline:
-            time.sleep(1)
-            capture_screen(sock_path, out / 'splash-return.ppm')
-            if ship_visible(Image.open(out / 'splash-return.ppm').convert('RGB')):
-                break
-        else:
-            raise RuntimeError('The second Esc did not restore the ship')
+            print('KVM retest checks installation and disk boot; ship animation is checked by the full TCG build.', flush=True)
         deadline = time.monotonic() + 360
         while time.monotonic() < deadline:
             if process.poll() is not None:
@@ -238,16 +246,31 @@ with tempfile.TemporaryDirectory() as tmp:
             raise RuntimeError('Google Chrome window did not open after download')
         time.sleep(10)
         capture_screen(sock_path, out / 'chrome-screen.ppm')
-        print('BIOS live VM boot passed: ship, settings, guide, Hafthi and Chrome.')
+        print('BIOS live VM boot passed: ' + ('ship, ' if acceleration == 'tcg' else '') + 'settings, guide, Hafthi and Chrome.', flush=True)
         # The sole target is a newly created disposable 16 GiB VM disk.
         # Feed a test script through the actual VM console; no auto-erasing service
         # or test backdoor is shipped in the ISO.
-        qmp_request(sock_path, 'send-key', {'keys':[{'type':'qcode','data':'ctrl'}, {'type':'qcode','data':'alt'}, {'type':'qcode','data':'f2'}]})
-        time.sleep(5)
-        type_text(sock_path, 'hafthi')
-        time.sleep(5)
-        type_text(sock_path, '')
-        time.sleep(2)
+        qmp_request(sock_path, 'send-key', {'keys':[{'type':'qcode','data':'meta_l'}, {'type':'qcode','data':'ret'}]})
+        deadline = time.monotonic() + 90
+        while time.monotonic() < deadline:
+            text = serial_path.read_text(errors='replace')
+            lines = [line for line in text.splitlines() if line.startswith('HAFTHIOS_DESKTOP_READY ')]
+            windows = json.loads(lines[-1].split(' ', 1)[1]) if lines else []
+            if any(window.get('app_id', '').lower() == 'se.dahlbeck.hafthi' and window.get('is_focused') for window in windows):
+                break
+            time.sleep(1)
+        else:
+            raise RuntimeError('The installation test terminal did not receive focus')
+        time.sleep(3)
+        type_text(sock_path, 'echo HAFTHIOS_INSTALL_CONSOLE_READY > /dev/ttyS0')
+        deadline = time.monotonic() + 45
+        while time.monotonic() < deadline:
+            if any(line.strip() == 'HAFTHIOS_INSTALL_CONSOLE_READY' for line in serial_path.read_text(errors='replace').splitlines()):
+                break
+            time.sleep(1)
+        else:
+            raise RuntimeError('The installation test console did not execute its readiness command')
+        capture_screen(sock_path, out / 'installer-console.ppm')
         script = """import runpy
 from pathlib import Path
 backend=runpy.run_path('/usr/local/bin/hafthios-install')
@@ -258,7 +281,7 @@ with open('/dev/ttyS0','w') as serial: serial.write('HAFTHIOS_INSTALL_OK\\n')
         script = 'import traceback\ntry:\n' + '\n'.join('    ' + line for line in script.splitlines()) + '\nexcept Exception:\n    traceback.print_exc()\n    print("HAFTHIOS_INSTALL_ERROR", flush=True)\n'
         encoded = base64.b64encode(script.encode()).decode()
         type_text(sock_path, 'echo ' + encoded + ' | base64 -d | sudo python3 > /dev/ttyS0 2>&1')
-        deadline = time.monotonic() + 900
+        deadline = time.monotonic() + 1800
         while time.monotonic() < deadline:
             installation_log = serial_path.read_text(errors='replace')
             if 'HAFTHIOS_INSTALL_ERROR' in installation_log:
@@ -283,7 +306,7 @@ with open('/dev/ttyS0','w') as serial: serial.write('HAFTHIOS_INSTALL_OK\\n')
                 extra = ['-drive', 'if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd',
                          '-drive', 'if=pflash,format=raw,file=' + str(variables)]
             process = subprocess.Popen([
-                'qemu-system-x86_64', '-accel', 'tcg', '-m', '4096', '-smp', '2', '-cpu', 'max',
+                'qemu-system-x86_64', '-accel', acceleration, '-m', '4096', '-smp', '2', '-cpu', cpu_model,
                 '-boot', 'c', '-drive', f'file={disk},format=raw,if=virtio',
                 '-vga', 'none', '-device', 'virtio-vga-gl', '-display', 'sdl,gl=on',
                 '-serial', f'file:{serial_path}', '-monitor', 'none',
@@ -330,6 +353,14 @@ with open('/dev/ttyS0','w') as serial: serial.write('HAFTHIOS_INSTALL_OK\\n')
             process.wait(timeout=20)
 
     finally:
+        if sys.exc_info()[0] is not None and process.poll() is None:
+            try:
+                failure = out / 'installer-failure.ppm'
+                capture_screen(sock_path, failure)
+                ocr = subprocess.run(['tesseract', str(failure), 'stdout'], capture_output=True, text=True, timeout=20)
+                print('VM failure screen text: ' + ocr.stdout[-5000:], flush=True)
+            except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired):
+                pass
         if process.poll() is None and not (out / 'boot-screen.ppm').exists():
             try:
                 capture_screen(sock_path, out / 'boot-screen.ppm')

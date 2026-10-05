@@ -66,9 +66,12 @@ jobs:
             bash -lc 'pacman -Syu --noconfirm archiso grub python mtools mkinitcpio rust git pkgconf wayland libxkbcommon systemd-libs alsa-lib && bash scripts/build-iso.sh'
           sudo chown -R "$(id -u):$(id -g)" out
       - name: Boot graphical prototype in a disposable VM
+        env:
+          HAFTHIOS_RETEST_ISO: ${{ steps.source_iso.outputs.run_id }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-system-gui python3-pil ovmf xvfb xauth xdotool libgl1-mesa-dri mesa-utils
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-system-gui python3-pil ovmf tesseract-ocr xvfb xauth xdotool libgl1-mesa-dri mesa-utils
+          if [[ -e /dev/kvm ]]; then sudo chmod 666 /dev/kvm; fi
           LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1920x1200x24" python3 scripts/test-boot.py
       - name: Report ISO size
         run: cat out/size.txt
