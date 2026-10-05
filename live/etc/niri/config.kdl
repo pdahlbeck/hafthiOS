@@ -10,16 +10,17 @@ layout {
     focus-ring { width 2; active-color "#76d1c7"; inactive-color "#344954"; }
 }
 spawn-at-startup "hafthios-welcome" "--desktop"
-spawn-at-startup "hafthi"
+spawn-at-startup "hafthios-terminal"
 prefer-no-csd
 window-rule {
     match app-id="org.hafthios.Welcome"
     default-column-width { fixed 440; }
 }
 binds {
-    Mod+Return { spawn "hafthi"; }
+    Mod+Return { spawn "hafthios-terminal"; }
     Mod+B { spawn "hafthios-chrome"; }
     Mod+Space { spawn "hafthios-welcome" "--desktop"; }
+    Mod+Comma { spawn "hafthios-welcome" "--desktop" "--settings"; }
     Mod+G { spawn "hafthios-welcome" "--guide"; }
     Mod+Q { close-window; }
     Mod+Left { focus-column-left; }

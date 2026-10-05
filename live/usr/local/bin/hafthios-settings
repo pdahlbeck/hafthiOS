@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Apply disposable live language and keyboard settings as the ordinary user."""
+import argparse
+import json
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+
+LANGUAGES = {'en': 'en_US.UTF-8', 'sv': 'sv_SE.UTF-8'}
+KEYBOARDS = {'us', 'se'}
+DEFAULT = {'language': 'en', 'keyboard': 'us'}
+
+
+def read_settings(home=None):
+    path = (home or Path.home()) / '.config/hafthios/settings.json'
+    try:
+        value = json.loads(path.read_text())
+        if not isinstance(value, dict):
+            return DEFAULT.copy()
+        return {'language': value['language'] if value.get('language') in LANGUAGES else 'en',
+                'keyboard': value['keyboard'] if value.get('keyboard') in KEYBOARDS else 'us'}
+    except (OSError, ValueError):
+        return DEFAULT.copy()
+
+
+def atomic_write(path, content):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, delete=False) as stream:
+        temporary = Path(stream.name)
+        stream.write(content)
+    try:
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def apply_settings(language, keyboard, home=None, base=Path('/etc/niri/config.kdl')):
+    if language not in LANGUAGES or keyboard not in KEYBOARDS:
+        raise ValueError('Unsupported language or keyboard layout')
+    home = home or Path.home()
+    text = base.read_text()
+    old = 'keyboard { xkb { layout "us"; }; }'
+    if text.count(old) != 1:
+        raise ValueError('The base keyboard configuration is missing or ambiguous')
+    text = text.replace(old, f'keyboard {{ xkb {{ layout "{keyboard}"; }}; }}')
+    text += f'\nenvironment {{ LANG "{LANGUAGES[language]}"; LANGUAGE "{language}"; }}\n'
+    # Validate before replacing a working config. Niri watches this path and
+    # reloads the new layout for the running desktop automatically.
+    config = home / '.config/niri/config.kdl'
+    config.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=config.parent) as temporary:
+        candidate = Path(temporary) / 'config.kdl'
+        candidate.write_text(text)
+        subprocess.run(['niri', 'validate', '--config', str(candidate)], check=True,
+                       capture_output=True, text=True, timeout=10)
+    atomic_write(config, text)
+    settings = home / '.config/hafthios'
+    atomic_write(settings / 'environment',
+                 f'export LANG={LANGUAGES[language]}\nexport LANGUAGE={language}\nexport XKB_DEFAULT_LAYOUT={keyboard}\n')
+    atomic_write(settings / 'settings.json', json.dumps({'language': language, 'keyboard': keyboard}) + '\n')
+    return {'language': language, 'keyboard': keyboard}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--language', choices=LANGUAGES)
+    parser.add_argument('--keyboard', choices=sorted(KEYBOARDS))
+    args = parser.parse_args()
+    if args.language is None and args.keyboard is None:
+        print(json.dumps(read_settings()))
+        return
+    current = read_settings()
+    apply_settings(args.language or current['language'], args.keyboard or current['keyboard'])
+
+
+if __name__ == '__main__':
+    main()

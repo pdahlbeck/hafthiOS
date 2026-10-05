@@ -146,6 +146,17 @@ with tempfile.TemporaryDirectory() as tmp:
             raise RuntimeError('GTK ready marker not received within 6 minutes')
         time.sleep(3)
         capture_screen(sock_path, out / 'boot-screen.ppm')
+        qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'f3'}]})
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if 'HAFTHIOS_SETTINGS_READY' in serial_path.read_text(errors='replace'):
+                break
+            time.sleep(1)
+        else:
+            raise RuntimeError('The language and keyboard settings did not open after F3')
+        time.sleep(2)
+        capture_screen(sock_path, out / 'settings-screen.ppm')
+        qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'esc'}]})
         qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'f1'}]})
         deadline = time.monotonic() + 90
         while time.monotonic() < deadline:

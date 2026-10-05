@@ -109,7 +109,8 @@
         "Detects the ship splash in screenshots before GTK starts, checks that frames change, presses Esc and verifies the ship artwork disappears for details, then verifies the second Esc restores the ship. Also checks the welcome screen and F1 guide as before.",
         "Requires the complete register ready marker and more than 1,000 filesystem entries when the guide opens.",
         "Presses F2 to enter Niri, requires the exact Hafþi application ID in the compositor window list, opens Chrome setup through Super+B, and waits for the browser window after an actual download.",
-        "Captures the actual SDL window inside Xvfb, because OpenGL scanouts may have no CPU image for QMP screendump. QMP remains responsible for keyboard input."
+        "Captures the actual SDL window inside Xvfb, because OpenGL scanouts may have no CPU image for QMP screendump. QMP remains responsible for keyboard input.",
+        "Also opens the language and keyboard page using F3 and saves settings-screen.ppm before returning to the guide and desktop."
       ]
     },
     {
@@ -150,7 +151,9 @@
       "details": [
         "Starts Cage for the welcome screen as the ordinary live user.",
         "Try the desktop sets a runtime marker; after Cage exits, this script starts niri-session.",
-        "Only Cage receives WLR_RENDERER=pixman. Niri uses accelerated graphics; failures print its user journal for diagnosis."
+        "Only Cage receives WLR_RENDERER=pixman. Niri uses accelerated graphics; failures print its user journal for diagnosis.",
+        "Keeps local session logs and restores the welcome screen after the desktop exits.",
+        "On process or systemd service failure, captures Niri diagnostics and opens the graphics error page. It loads live language/layout settings on each transition."
       ]
     },
     {
@@ -171,7 +174,10 @@
         "The guide is read from /usr/share/doc/hafthios/. A search field filters file names and explanations; each article can show its bundled source snapshot.",
         "F1 opens the guide. Serial markers are used by the VM test to verify that the UI and guide loaded.",
         "The guide source viewer recognises binary assets and displays an explanation instead of attempting to show image bytes as UTF-8 text.",
-        "The guide defaults to the complete ISO file register. Queries the read-only SQLite database by path, package or image layer, renders 100 rows per page and provides Previous/Next controls. The source guide remains a separate view."
+        "The guide defaults to the complete ISO file register. Queries the read-only SQLite database by path, package or image layer, renders 100 rows per page and provides Previous/Next controls. The source guide remains a separate view.",
+        "Adds independent English/Swedish interface language and US/Swedish keyboard choices, plus asynchronous network status and configuration.",
+        "Primary live controls have Swedish translations; the file register articles and installer preview remain English. F3 opens settings and Esc returns from settings, network or error pages.",
+        "A scrollable content area keeps controls reachable in small VM windows. A failed desktop shows actual local diagnostics."
       ]
     },
     {
@@ -372,7 +378,9 @@
       "when": "Archiso runs this customization hook after package installation.",
       "details": [
         "The hafthi account is UID 1000 and owns its disposable home. Autologin is limited to tty1.",
-        "The live user can administer the live session through sudo; this policy must not be copied to an installed system."
+        "The live user can administer the live session through sudo; this policy must not be copied to an installed system.",
+        "Generates en_US.UTF-8 and sv_SE.UTF-8 locales in the image.",
+        "Validates real Niri configurations for English/US, Swedish/Swedish and English/Swedish without changing the live user defaults."
       ],
       "connections": [
         "scripts/build-iso.sh"
@@ -384,7 +392,8 @@
       "when": "When the autologin shell starts.",
       "details": [
         "The guard prevents graphical startup inside Hafþi or another terminal.",
-        "A session environment marker prevents recursion when niri-session starts a login shell."
+        "A session environment marker prevents recursion when niri-session starts a login shell.",
+        "Loads the live locale environment for new Bash login shells before checking the welcome TTY."
       ],
       "connections": [
         "scripts/build-iso.sh"
@@ -408,7 +417,8 @@
       "when": "When Try the desktop starts Niri.",
       "details": [
         "Starts Hafþi and the desktop controls. Defines focus, window management, browser and guide shortcuts.",
-        "Uses the system’s accelerated graphics driver, not the welcome compositor’s software renderer."
+        "Uses the system’s accelerated graphics driver, not the welcome compositor’s software renderer.",
+        "Terminal actions use the locale-aware wrapper. Super + comma opens language and keyboard settings."
       ],
       "connections": [
         "scripts/build-iso.sh"
@@ -437,6 +447,49 @@
       "details": [
         "Rejects launching Chrome as root; verifies ordinary-user launches retain sandbox protections.",
         "Simulates an offline download and verifies existing browser files are preserved and temporary files cleaned."
+      ]
+    },
+    {
+      "path": "live/usr/local/bin/hafthios-settings",
+      "purpose": "Validates and applies the ordinary live user's language and keyboard choices.",
+      "when": "When Apply is clicked in Language and keyboard, or when its CLI is used.",
+      "connections": [
+        "live/etc/niri/config.kdl",
+        "live/usr/local/bin/hafthios-welcome",
+        "live/usr/local/bin/hafthios-terminal"
+      ],
+      "details": [
+        "Only English/Swedish locales and US/Swedish keyboard layouts are accepted. Language and layout are independent.",
+        "Niri validates a temporary configuration before the current user configuration is atomically replaced. Niri watches that file to reload the keyboard.",
+        "The helper writes settings.json and a shell environment file in the disposable user home. It does not mount or modify a target disk."
+      ]
+    },
+    {
+      "path": "live/usr/local/bin/hafthios-terminal",
+      "purpose": "Starts Hafthi with the currently selected live-session locale.",
+      "when": "Niri autostart and terminal shortcuts launch this wrapper.",
+      "connections": [
+        "live/usr/local/bin/hafthios-settings",
+        "live/etc/niri/config.kdl",
+        "live/home/hafthi/.bash_profile"
+      ],
+      "details": [
+        "Loads the generated language and keyboard environment from the live home, then replaces itself with Hafthi.",
+        "Changing language affects newly launched terminals, rather than changing the environment of existing processes."
+      ]
+    },
+    {
+      "path": "tests/test_settings.py",
+      "purpose": "Checks live settings validation and recovery after a failed desktop launch.",
+      "when": "The test suite runs locally and in the ISO build workflow.",
+      "connections": [
+        "live/usr/local/bin/hafthios-settings",
+        "live/usr/local/bin/hafthios-session"
+      ],
+      "details": [
+        "Uses temporary homes to verify independent language/layout choices, actual shell environment loading, and preservation of previous files after validation fails.",
+        "Malformed settings and unsupported values are rejected or replaced with documented defaults.",
+        "Mocks compositor and systemd commands to verify that both process failures and failed service results reopen the welcome screen with diagnostics."
       ]
     }
   ]

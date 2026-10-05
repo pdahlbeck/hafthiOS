@@ -48,6 +48,7 @@ jobs:
             out/splash-screen.png
             out/boot-details.ppm
             out/guide-screen.ppm
+            out/settings-screen.ppm
             out/desktop-screen.ppm
             out/chrome-screen.ppm
             out/boot-serial.log
@@ -69,6 +70,7 @@ jobs:
             out/splash-screen.png
             out/boot-details.ppm
             out/guide-screen.ppm
+            out/settings-screen.ppm
             out/desktop-screen.ppm
             out/chrome-screen.ppm
             out/boot-serial.log

@@ -34,7 +34,7 @@ Output is in `out/`. The script copies Archiso's baseline profile into a tempora
 ## Roadmap
 
 - Boot and validate the graphical prototype in a VM.
-- Network setup, language and keyboard selection.
+- Test live language, keyboard and network settings on real hardware.
 - A reviewed installer backend with explicit disk-erasure confirmation.
 - Test the Niri desktop, bundled Hafþi and first-use Chrome download on real hardware.
 - Test real hardware and minimize the measured ISO size.
@@ -65,3 +65,26 @@ Choose **Project source guide** for the separate, detailed source explanations a
 - **Super + Q**: close the focused window.
 
 Use at least **4 GB RAM** for the desktop and first-use browser download. The live writable layer can use up to half the RAM. Niri requires accelerated graphics, including virtual 3D acceleration in a VM. The welcome screen can run without it. The live session includes Fish, audio services, common Intel/AMD graphics and Wi-Fi firmware, and normal Arch package tools; it does not install anything onto a target disk. Hafþi is built from a pinned source commit in `scripts/build-hafthi.sh` and retains its MIT license.
+
+## Live settings
+
+Choose **Language and keyboard** on the welcome screen or in the desktop controls.
+English and Swedish interface language can be selected independently of US and
+Swedish keyboard layouts. **F3** opens these settings; **Super + comma** opens
+settings inside Niri. Press **Esc** to return from settings or network status.
+The welcome screen, desktop controls and settings support Swedish; the file guide
+and installation preview remain in English. The locale also applies to new
+terminal sessions. Existing applications retain their environment.
+
+The Niri keyboard changes immediately after **Apply**. Before entering Niri,
+the welcome screen's keyboard changes when that screen is reopened. Settings
+are stored only in the live home and disappear on restart.
+
+**Network settings** shows current devices and connections. **Configure connection**
+opens NetworkManager's connection tool for Wi-Fi and Ethernet; the status refreshes
+when the tool closes. Wi-Fi hardware still needs testing on physical machines.
+
+If Niri fails to start, the welcome screen returns with graphics advice and
+actual diagnostics. In UTM use **virtio-vga-gl (GPU Supported)** and fully restart
+the VM after changing its display adapter. Logs remain in the live home under
+`~/.local/state/hafthios/` until restart.

@@ -5,6 +5,8 @@ import json
 import sqlite3
 import subprocess
 import sys
+import runpy
+import threading
 from pathlib import Path
 
 
@@ -28,6 +30,48 @@ def read_disks():
     return disks
 
 
+SWEDISH = {
+    'A quiet desktop.\nA powerful terminal.': 'Ett lugnt skrivbord.\nEn kraftfull terminal.',
+    'Arch Linux, Wayland and Hafþi. A simpler place to start.': 'Arch Linux, Wayland och Hafþi. En enklare start.',
+    'Try the desktop from USB. Disk installation is still a preview.': 'Prova skrivbordet från USB. Diskinstallationen är fortfarande en förhandsvisning.',
+    'Try the desktop': 'Prova skrivbordet',
+    'Preview installation': 'Förhandsvisa installation',
+    'Hafþi OS Guide': 'Hafþi OS-filguide',
+    'Network settings': 'Nätverksinställningar',
+    'Language and keyboard': 'Språk och tangentbord',
+    'Restart': 'Starta om',
+    'Welcome aboard.': 'Välkommen ombord.',
+    'Your Hafþi OS live desktop.': 'Ditt Hafþi OS-skrivbord.',
+    'Open Hafþi': 'Öppna Hafþi',
+    'Open Google Chrome': 'Öppna Google Chrome',
+    'Prototype preview · Your disks will not be changed.': 'Förhandsversion · Dina diskar ändras inte.',
+    'Settings': 'Inställningar',
+    'Choose the language and keyboard for this live session.': 'Välj språk och tangentbord för den här sessionen.',
+    'Language': 'Språk',
+    'Keyboard': 'Tangentbord',
+    'Apply': 'Använd',
+    'Back': 'Tillbaka',
+    'Back to welcome': 'Tillbaka till välkomstsidan',
+    'Return to welcome': 'Tillbaka till välkomstsidan',
+    'Changes last until you restart. The file guide remains in English.': 'Ändringarna gäller tills du startar om. Filguiden är kvar på engelska.',
+    'Could not apply settings: ': 'Kunde inte tillämpa inställningarna: ',
+    'Could not read network status: ': 'Kunde inte läsa nätverksstatus: ',
+    'Could not open network settings: ': 'Kunde inte öppna nätverksinställningarna: ',
+    'Applying settings…': 'Tillämpar inställningar…',
+    'Settings applied. The Niri keyboard changes immediately. New terminals use the selected language.': 'Inställningarna är sparade. Niri byter tangentbord direkt. Nya terminaler använder valt språk.',
+    'In the welcome screen, the keyboard changes when you enter the desktop or reopen the welcome screen.': 'På välkomstsidan byts tangentbordet när du öppnar skrivbordet eller välkomstsidan igen.',
+    'Connect to Wi-Fi or Ethernet for browser downloads.': 'Anslut till Wi-Fi eller Ethernet för att hämta webbläsaren.',
+    'Checking the network…': 'Kontrollerar nätverket…',
+    'Configure connection': 'Anslut till nätverk',
+    'Refresh': 'Uppdatera',
+    'The desktop could not start': 'Skrivbordet kunde inte starta',
+    'Check graphics acceleration in your VM. In UTM, choose virtio-vga-gl (GPU Supported), then fully restart the VM.': 'Kontrollera grafikaccelerationen i din VM. I UTM väljer du virtio-vga-gl (GPU Supported) och startar sedan om VM:n helt.',
+    'Try again': 'Försök igen',
+    'Diagnostics are saved in ~/.local/state/hafthios/desktop-error.log.': 'Felinformation finns i ~/.local/state/hafthios/desktop-error.log.',
+    'Super + Enter  ·  Terminal\nSuper + B  ·  Browser\nSuper + G  ·  File guide\nSuper + ← / →  ·  Switch windows\nSuper + Q  ·  Close window': 'Super + Enter  ·  Terminal\nSuper + B  ·  Webbläsare\nSuper + G  ·  Filguide\nSuper + ← / →  ·  Byt fönster\nSuper + Q  ·  Stäng fönster',
+}
+
+
 def main():
     import gi
     gi.require_version('Gtk', '4.0')
@@ -37,6 +81,9 @@ def main():
         def __init__(self):
             super().__init__(application_id='org.hafthios.Welcome',
                              flags=Gio.ApplicationFlags.NON_UNIQUE)
+            self.settings_backend = runpy.run_path(str(Path(__file__).with_name('hafthios-settings')))
+            self.settings = self.settings_backend['read_settings']()
+            self.translatable = []
             self.disks = []
             self.guide_entries = []
             self.guide_directory = Path("/usr/share/doc/hafthios")
@@ -73,12 +120,19 @@ def main():
             self.pages.set_vexpand(True)
             self.pages.set_vhomogeneous(False)
             self.pages.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
-            root.append(self.pages)
+            content = Gtk.ScrolledWindow()
+            content.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+            content.set_vexpand(True)
+            content.set_child(self.pages)
+            root.append(content)
             self.build_welcome()
             self.build_desktop()
             self.build_disk_page()
             self.build_review_page()
             self.build_guide_page()
+            self.build_settings_page()
+            self.build_network_page()
+            self.build_error_page()
             keys = Gtk.EventControllerKey()
             keys.connect('key-pressed', self.guide_key)
             self.window.add_controller(keys)
@@ -86,6 +140,10 @@ def main():
             if '--desktop' in sys.argv:
                 self.pages.set_visible_child_name('desktop')
                 GLib.timeout_add_seconds(2, self.desktop_ready)
+            if '--session-error' in sys.argv:
+                self.pages.set_visible_child_name('error')
+            if '--settings' in sys.argv:
+                self.show_settings(None)
             if '--guide' in sys.argv:
                 self.show_guide(None)
             self.window.present()
@@ -100,8 +158,16 @@ def main():
                 pass
             return False
 
+        def tr(self, text):
+            return SWEDISH.get(text, text) if self.settings['language'] == 'sv' else text
+
+        def translate_widgets(self):
+            for widget, source in self.translatable:
+                widget.set_label(self.tr(source))
+
         def label(self, text, style=None):
-            label = Gtk.Label(label=text, xalign=0)
+            label = Gtk.Label(label=self.tr(text), xalign=0)
+            self.translatable.append((label, text))
             label.set_wrap(True)
             if style:
                 label.add_css_class(style)
@@ -116,7 +182,8 @@ def main():
             return page
 
         def button(self, text, action, primary=False):
-            button = Gtk.Button(label=text)
+            button = Gtk.Button(label=self.tr(text))
+            self.translatable.append((button, text))
             button.set_halign(Gtk.Align.START)
             button.connect('clicked', action)
             if primary:
@@ -131,6 +198,7 @@ def main():
             page.append(self.button('Try the desktop', self.try_desktop, True))
             page.append(self.button('Preview installation', self.show_disks))
             page.append(self.button('Hafþi OS Guide', self.show_guide))
+            page.append(self.button('Language and keyboard', self.show_settings))
             page.append(self.button('Network settings', self.network))
             page.append(self.button('Restart', self.restart))
 
@@ -141,9 +209,10 @@ def main():
         def build_desktop(self):
             page = self.page('desktop', 'Welcome aboard.', 'Your Hafþi OS live desktop.')
             page.set_spacing(12)
-            page.append(self.button('Open Hafþi', lambda _: subprocess.Popen(['hafthi']), True))
+            page.append(self.button('Open Hafþi', lambda _: subprocess.Popen(['hafthios-terminal']), True))
             page.append(self.button('Open Google Chrome', lambda _: subprocess.Popen(['hafthios-chrome'])))
             page.append(self.button('Hafþi OS Guide', self.show_guide))
+            page.append(self.button('Language and keyboard', self.show_settings))
             page.append(self.button('Network settings', self.network))
             page.append(self.label('Super + Enter  ·  Terminal\nSuper + B  ·  Browser\nSuper + G  ·  File guide\nSuper + ← / →  ·  Switch windows\nSuper + Q  ·  Close window', 'notice'))
             page.append(self.button('Restart', self.restart))
@@ -160,6 +229,12 @@ def main():
         def guide_key(self, controller, keyval, keycode, state):
             if keyval == Gdk.KEY_F2 and '--desktop' not in sys.argv:
                 self.try_desktop(None)
+                return True
+            if keyval == Gdk.KEY_Escape and self.pages.get_visible_child_name() in ('settings', 'network', 'error'):
+                self.return_home(None)
+                return True
+            if keyval == Gdk.KEY_F3:
+                self.show_settings(None)
                 return True
             if keyval == Gdk.KEY_F1:
                 self.show_guide(None)
@@ -393,9 +468,131 @@ def main():
                                   + '\n\nMode: preview only')
             self.pages.set_visible_child_name('review')
 
+        def settings_task(self, work, finished):
+            # Network queries and config validation must never freeze the GTK loop.
+            def worker():
+                result, error = None, None
+                try:
+                    result = work()
+                except Exception as exc:
+                    error = str(exc)
+                GLib.idle_add(finished, result, error)
+            threading.Thread(target=worker, daemon=True).start()
+
+        def return_home(self, _):
+            self.pages.set_visible_child_name('desktop' if '--desktop' in sys.argv else 'welcome')
+
+        def build_settings_page(self):
+            page = self.page('settings', 'Settings', 'Choose the language and keyboard for this live session.')
+            page.set_spacing(12)
+            page.append(self.label('Language', 'muted'))
+            self.language_choice = Gtk.DropDown.new_from_strings(['English', 'Svenska'])
+            page.append(self.language_choice)
+            page.append(self.label('Keyboard', 'muted'))
+            self.keyboard_choice = Gtk.DropDown.new_from_strings(['English (US)', 'Svenska (SE)'])
+            page.append(self.keyboard_choice)
+            self.apply_button = self.button('Apply', self.apply_settings, True)
+            page.append(self.apply_button)
+            self.settings_status = self.label('', 'notice')
+            page.append(self.settings_status)
+            page.append(self.label('Changes last until you restart. The file guide remains in English.', 'muted'))
+            page.append(self.button('Back', self.return_home))
+
+        def show_settings(self, _):
+            self.settings = self.settings_backend['read_settings']()
+            self.translate_widgets()
+            self.language_choice.set_selected(1 if self.settings['language'] == 'sv' else 0)
+            self.keyboard_choice.set_selected(1 if self.settings['keyboard'] == 'se' else 0)
+            self.pages.set_visible_child_name('settings')
+            self.language_choice.grab_focus()
+            try:
+                with open('/dev/ttyS0', 'w') as serial:
+                    serial.write('HAFTHIOS_SETTINGS_READY\n')
+            except OSError:
+                pass
+
+        def apply_settings(self, _):
+            language = ('en', 'sv')[self.language_choice.get_selected()]
+            keyboard = ('us', 'se')[self.keyboard_choice.get_selected()]
+            self.apply_button.set_sensitive(False)
+            self.settings_status.set_text(self.tr('Applying settings…'))
+            def finished(result, error):
+                self.apply_button.set_sensitive(True)
+                if error:
+                    self.settings_status.set_text(self.tr('Could not apply settings: ') + error)
+                else:
+                    self.settings = result
+                    os.environ.update(LANG=self.settings_backend['LANGUAGES'][language],
+                                      LANGUAGE=language, XKB_DEFAULT_LAYOUT=keyboard)
+                    self.translate_widgets()
+                    message = self.tr('Settings applied. The Niri keyboard changes immediately. New terminals use the selected language.')
+                    if '--desktop' not in sys.argv:
+                        message += '\n' + self.tr('In the welcome screen, the keyboard changes when you enter the desktop or reopen the welcome screen.')
+                    self.settings_status.set_text(message)
+                return False
+            self.settings_task(lambda: self.settings_backend['apply_settings'](language, keyboard), finished)
+
+        def build_network_page(self):
+            page = self.page('network', 'Network settings', 'Connect to Wi-Fi or Ethernet for browser downloads.')
+            page.set_spacing(12)
+            self.network_status = self.label('', 'notice')
+            page.append(self.network_status)
+            self.network_button = self.button('Configure connection', self.configure_network, True)
+            page.append(self.network_button)
+            self.refresh_network_button = self.button('Refresh', self.refresh_network)
+            page.append(self.refresh_network_button)
+            page.append(self.button('Back', self.return_home))
+
         def network(self, _):
-            # Configure only the disposable live session; no target disk mounts.
-            subprocess.Popen(['foot', '--title=Live network settings', 'nmtui'])
+            self.pages.set_visible_child_name('network')
+            self.refresh_network(None)
+
+        def refresh_network(self, _):
+            self.refresh_network_button.set_sensitive(False)
+            self.network_status.set_text(self.tr('Checking the network…'))
+            def query():
+                return subprocess.run(['nmcli', '-f', 'DEVICE,TYPE,STATE,CONNECTION', 'device', 'status'],
+                                      check=True, capture_output=True, text=True, timeout=10).stdout.strip()
+            def finished(result, error):
+                self.refresh_network_button.set_sensitive(True)
+                self.network_status.set_text(self.tr('Could not read network status: ') + error if error else result)
+                return False
+            self.settings_task(query, finished)
+
+        def configure_network(self, _):
+            self.network_button.set_sensitive(False)
+            def configure():
+                subprocess.run(['foot', '--title=Live network settings', 'nmtui'], check=True)
+            def finished(result, error):
+                self.network_button.set_sensitive(True)
+                if error:
+                    self.network_status.set_text(self.tr('Could not open network settings: ') + error)
+                else:
+                    self.refresh_network(None)
+                return False
+            self.settings_task(configure, finished)
+
+        def build_error_page(self):
+            page = self.page('error', 'The desktop could not start',
+                             'Check graphics acceleration in your VM. In UTM, choose virtio-vga-gl (GPU Supported), then fully restart the VM.')
+            page.set_spacing(12)
+            view = Gtk.TextView()
+            view.set_editable(False)
+            view.set_cursor_visible(False)
+            view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+            try:
+                text = (Path.home() / '.local/state/hafthios/desktop-error.log').read_text(errors='replace')[-12000:]
+            except OSError:
+                text = 'No diagnostics were recorded.'
+            view.get_buffer().set_text(text)
+            scroller = Gtk.ScrolledWindow()
+            scroller.set_vexpand(True)
+            scroller.set_min_content_height(120)
+            scroller.set_child(view)
+            page.append(scroller)
+            page.append(self.label('Diagnostics are saved in ~/.local/state/hafthios/desktop-error.log.', 'muted'))
+            page.append(self.button('Try again', self.try_desktop, True))
+            page.append(self.button('Back', self.return_home))
 
         def restart(self, _):
             subprocess.Popen(['systemctl', 'reboot'])

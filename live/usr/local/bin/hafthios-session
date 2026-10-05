@@ -2,13 +2,38 @@
 set -euo pipefail
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 export GDK_BACKEND=wayland GTK_THEME=Adwaita:dark GSK_RENDERER=cairo
-if [[ -w /dev/ttyS0 ]]; then exec > /dev/ttyS0 2>&1; fi
-# Cage owns the welcome only. Its CPU renderer is not inherited by Niri.
-WLR_RENDERER=pixman cage -- /usr/local/bin/hafthios-welcome
-if [[ -f "$XDG_RUNTIME_DIR/hafthios-try-desktop" ]]; then
-    rm -f "$XDG_RUNTIME_DIR/hafthios-try-desktop"
-    niri-session || {
-        journalctl --user -u niri.service --no-pager -n 100
+state="$HOME/.local/state/hafthios"
+mkdir -p "$state"
+# Keep diagnostics in the live home, even in VMs without a serial console.
+welcome_args=()
+while true; do
+    if [[ -f "$HOME/.config/hafthios/environment" ]]; then
+        source "$HOME/.config/hafthios/environment"
+    fi
+    if ! WLR_RENDERER=pixman cage -- /usr/local/bin/hafthios-welcome "${welcome_args[@]}" >> "$state/session.log" 2>&1; then
+        printf 'The welcome screen could not start. Diagnostics: %s\n' "$state/session.log" >&2
+        tail -n 40 "$state/session.log" >&2
         exit 1
-    }
-fi
+    fi
+    if [[ ! -f "$XDG_RUNTIME_DIR/hafthios-try-desktop" ]]; then break; fi
+    rm -f "$XDG_RUNTIME_DIR/hafthios-try-desktop"
+    if [[ -f "$HOME/.config/hafthios/environment" ]]; then
+        source "$HOME/.config/hafthios/environment"
+    fi
+    systemctl --user import-environment LANG LANGUAGE XKB_DEFAULT_LAYOUT || true
+    started=$(date --iso-8601=seconds)
+    status=0
+    niri-session >> "$state/session.log" 2>&1 || status=$?
+    result=$(systemctl --user show niri.service --property=Result --value 2>/dev/null || true)
+    if (( status != 0 )) || [[ -n "$result" && "$result" != success ]]; then
+        {
+            printf 'Niri session exit status: %s; service result: %s\n' "$status" "$result"
+            journalctl --user -u niri.service --since "$started" --no-pager -n 80 || true
+            tail -n 30 "$state/session.log"
+        } > "$state/desktop-error.log"
+        welcome_args=(--session-error)
+    else
+        welcome_args=()
+    fi
+    # Returning from the desktop or a failed start restores the welcome UI.
+done
