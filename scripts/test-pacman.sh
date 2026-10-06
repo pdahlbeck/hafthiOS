@@ -5,10 +5,15 @@ if (( EUID != 0 )); then echo 'Run in the isolated Arch CI container as root.' >
 iso=${1:?Supply an existing Hafthi OS ISO}
 project=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 temporary=$(mktemp -d /var/tmp/hafthios-pacman.XXXXXX)
-trap 'rm -rf -- "$temporary"' EXIT
-xorriso -osirrox on -indev "$iso" -extract /arch/x86_64/airootfs.sfs "$temporary/airootfs.sfs"
 root="$temporary/root"
+cleanup() {
+    if mountpoint -q "$root"; then umount -R "$root"; fi
+    rm -rf -- "$temporary"
+}
+trap cleanup EXIT
+xorriso -osirrox on -indev "$iso" -extract /arch/x86_64/airootfs.sfs "$temporary/airootfs.sfs"
 unsquashfs -no-progress -d "$root" "$temporary/airootfs.sfs"
+mount --bind "$root" "$root"
 [[ -f "$root/usr/local/bin/hafthios-install" && -f "$root/usr/share/doc/hafthios/file-guide.json" ]]
 # Apply only the pending package configuration; do not use the host's keyring.
 cp "$project/live/etc/pacman.d/mirrorlist" "$root/etc/pacman.d/mirrorlist"
