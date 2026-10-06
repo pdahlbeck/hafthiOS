@@ -285,8 +285,17 @@ with tempfile.TemporaryDirectory() as tmp:
             raise RuntimeError('The installation test console did not execute its readiness command')
         capture_screen(sock_path, out / 'installer-console.ppm')
         script = """print('HAFTHIOS_INSTALL_STARTED', flush=True)
-import runpy
+import runpy, subprocess
 from pathlib import Path
+for repository in ('core', 'extra'):
+    servers = subprocess.check_output(['pacman-conf', '--repo', repository, 'Server'], text=True).strip()
+    if not servers.startswith('https://'):
+        raise RuntimeError('Missing HTTPS package servers for ' + repository)
+# This disposable VM only queries repository metadata before the offline copy.
+# It does not install packages from a partially upgraded system.
+subprocess.run(['pacman', '-Sy', '--noconfirm'], check=True, timeout=180)
+subprocess.run(['pacman', '-Si', 'git', 'base-devel'], check=True, timeout=30)
+print('HAFTHIOS_PACKAGE_REPOSITORIES_OK', flush=True)
 backend=runpy.run_path('/usr/local/bin/hafthios-install')
 plan=backend['make_plan']('/dev/vda')
 backend['install']({'token':plan['token'],'confirmation':plan['confirmation'],'password':'testpassword123','settings':{'language':'sv','keyboard':'se'}})

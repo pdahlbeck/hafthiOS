@@ -115,7 +115,8 @@
         "Captures the actual SDL window inside Xvfb, because OpenGL scanouts may have no CPU image for QMP screendump. QMP remains responsible for keyboard input.",
         "Also opens the language and keyboard page using F3 and saves settings-screen.ppm before returning to the guide and desktop.",
         "After testing the live desktop, drives the VM console to install onto its newly created disposable 16 GiB disk. The ISO contains no automatic installer test service.",
-        "Detaches the ISO, boots the disk under BIOS and OVMF UEFI, logs in with a throwaway test password and verifies persisted Swedish settings, ext4 root and removal of live privileges."
+        "Detaches the ISO, boots the disk under BIOS and OVMF UEFI, logs in with a throwaway test password and verifies persisted Swedish settings, ext4 root and removal of live privileges.",
+        "Synchronizes real core/extra repository metadata in the disposable live VM and verifies git and base-devel are available before installing to disk."
       ]
     },
     {
@@ -385,7 +386,8 @@
         "The hafthi account is UID 1000 and owns its disposable home. Autologin is limited to tty1.",
         "The live user can administer the live session through sudo; this policy must not be copied to an installed system.",
         "Generates en_US.UTF-8 and sv_SE.UTF-8 locales in the image.",
-        "Validates real Niri configurations for English/US, Swedish/Swedish and English/Swedish without changing the live user defaults."
+        "Validates real Niri configurations for English/US, Swedish/Swedish and English/Swedish without changing the live user defaults.",
+        "Fails the build if core or extra has no active HTTPS package server."
       ],
       "connections": [
         "scripts/build-iso.sh"
@@ -527,6 +529,21 @@
         "Tests exclusion of live media, mounted roots, swap, readonly/small disks and stacked devices.",
         "Checks exact confirmation, password constraints, expiry and changed disk identity. Invalid confirmation cannot reach a disk-writing command.",
         "Uses a temporary target tree to verify removal of live autologin/NOPASSWD and replacement with normal installed kernel and locale settings. The actual install/boot path is exercised in a disposable VM."
+      ]
+    },
+    {
+      "path": "live/etc/pacman.d/mirrorlist",
+      "purpose": "Provides an active HTTPS Arch package mirror for core and extra.",
+      "when": "Used by pacman and Yay in the live session and after disk installation.",
+      "connections": [
+        "scripts/build-iso.sh",
+        "live/root/customize_airootfs.sh",
+        "live/usr/local/bin/hafthios-install",
+        "scripts/test-boot.py"
+      ],
+      "details": [
+        "Uses the geographically routed geo.mirror.pkgbuild.com server with literal $repo and $arch placeholders.",
+        "The live filesystem copy preserves this configuration on disk. Package signature checking is unchanged."
       ]
     }
   ]

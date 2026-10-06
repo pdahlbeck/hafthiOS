@@ -99,6 +99,10 @@ class InstallationSafetyTests(unittest.TestCase):
             for path in ('etc/systemd/system/getty@tty1.service.d/autologin.conf','etc/sudoers.d/hafthios-live','etc/mkinitcpio.conf.d/archiso.conf','home/hafthi/.config/hafthios/chrome/SingletonLock'):
                 target=root/path; target.parent.mkdir(parents=True,exist_ok=True); target.write_text('live-only')
             kernel=root/'usr/lib/modules/test/vmlinuz';kernel.parent.mkdir(parents=True);kernel.write_bytes(b'kernel')
+            mirror=root/'etc/pacman.d/mirrorlist'
+            mirror.parent.mkdir(parents=True, exist_ok=True)
+            mirror_content=(ROOT/'live/etc/pacman.d/mirrorlist').read_text()
+            mirror.write_text(mirror_content)
             (root/'boot').mkdir()
             commands=[]
             def command(args, **kwargs):
@@ -112,6 +116,7 @@ class InstallationSafetyTests(unittest.TestCase):
             self.assertNotIn('archiso', (root/'etc/mkinitcpio.conf').read_text())
             self.assertEqual((root/'etc/locale.conf').read_text(), 'LANG=sv_SE.UTF-8\n')
             self.assertEqual((root/'etc/vconsole.conf').read_text(), 'KEYMAP=sv-latin1\n')
+            self.assertEqual(mirror.read_text(), mirror_content)
             self.assertIn('niri-session', (root/'home/hafthi/.bash_profile').read_text())
             self.assertTrue(any(args[-1:] == ['chpasswd'] and kw['input'].startswith('hafthi:') for args,kw in commands))
             self.assertTrue(any('runuser' in args and 'sv' in args and 'se' in args for args,kw in commands))

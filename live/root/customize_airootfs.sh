@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Fail the image build if either repository has no usable runtime server.
+for repository in core extra; do
+    servers=$(pacman-conf --repo "$repository" Server)
+    [[ "$servers" == https://* ]] || { echo "No HTTPS mirror configured for $repository" >&2; exit 1; }
+done
 useradd --create-home --uid 1000 --user-group --groups wheel,uucp,audio,video --shell /bin/bash hafthi
 passwd -d hafthi
 chown -R hafthi:hafthi /home/hafthi
