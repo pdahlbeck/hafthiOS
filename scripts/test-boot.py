@@ -263,13 +263,17 @@ with tempfile.TemporaryDirectory() as tmp:
         # The sole target is a newly created disposable 16 GiB VM disk.
         # Feed a test script through the actual VM console; no auto-erasing service
         # or test backdoor is shipped in the ISO.
+        previous_text = serial_path.read_text(errors='replace')
+        previous_lines = [line for line in previous_text.splitlines() if line.startswith('HAFTHIOS_DESKTOP_READY ')]
+        previous_windows = json.loads(previous_lines[-1].split(' ', 1)[1]) if previous_lines else []
+        previous_ids = {window.get('id') for window in previous_windows}
         qmp_request(sock_path, 'send-key', {'keys':[{'type':'qcode','data':'meta_l'}, {'type':'qcode','data':'ret'}]})
         deadline = time.monotonic() + 90
         while time.monotonic() < deadline:
             text = serial_path.read_text(errors='replace')
             lines = [line for line in text.splitlines() if line.startswith('HAFTHIOS_DESKTOP_READY ')]
             windows = json.loads(lines[-1].split(' ', 1)[1]) if lines else []
-            if any(window.get('app_id', '').lower() == 'se.dahlbeck.hafthi' and window.get('is_focused') for window in windows):
+            if any(window.get('id') not in previous_ids and window.get('app_id', '').lower() == 'se.dahlbeck.hafthi' and window.get('is_focused') for window in windows):
                 break
             time.sleep(1)
         else:
@@ -291,10 +295,10 @@ for repository in ('core', 'extra'):
     servers = subprocess.check_output(['pacman-conf', '--repo', repository, 'Server'], text=True).strip()
     if not servers.startswith('https://'):
         raise RuntimeError('Missing HTTPS package servers for ' + repository)
-# This disposable VM only queries repository metadata before the offline copy.
-# It does not install packages from a partially upgraded system.
-subprocess.run(['pacman', '-Sy', '--noconfirm'], check=True, timeout=180)
-subprocess.run(['pacman', '-Si', 'git', 'base-devel'], check=True, timeout=30)
+subprocess.run(['systemctl', 'start', 'hafthios-package-keys.service'], check=True, timeout=180)
+subprocess.run(['pacman', '-Syu', '--noconfirm', '--needed', 'git', 'base-devel'], check=True, timeout=600)
+subprocess.run(['git', '--version'], check=True, timeout=30)
+subprocess.run(['make', '--version'], check=True, timeout=30)
 print('HAFTHIOS_PACKAGE_REPOSITORIES_OK', flush=True)
 backend=runpy.run_path('/usr/local/bin/hafthios-install')
 plan=backend['make_plan']('/dev/vda')

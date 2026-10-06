@@ -82,6 +82,7 @@ PACKAGES
 # Use the normal Arch repositories and their signature checks from the baseline.
 mkdir -p "$profile/airootfs/etc/systemd/system/multi-user.target.wants"
 ln -sf /usr/lib/systemd/system/NetworkManager.service "$profile/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
+ln -sf ../hafthios-package-keys.service "$profile/airootfs/etc/systemd/system/multi-user.target.wants/hafthios-package-keys.service"
 # Getty owns the splash handoff; prevent the default early quit/wait pair.
 ln -sf /dev/null "$profile/airootfs/etc/systemd/system/plymouth-quit.service"
 ln -sf /dev/null "$profile/airootfs/etc/systemd/system/plymouth-quit-wait.service"

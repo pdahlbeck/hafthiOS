@@ -50,7 +50,8 @@
         "hafthiOS-prototype contains the ISO; hafthiOS-preview contains the screenshot, serial log and size report. Artifacts currently expire after 14 days.",
         "A successful build and BIOS VM test do not establish compatibility with every graphics card, wireless device, UEFI firmware or Secure Boot setup.",
         "Test-script-only corrections can retest an unchanged ISO from the same repository using iso_run_id or [retest-iso:RUN_ID]. The artifact records the original build run in iso-source.txt; embedded source snapshots remain those of the original ISO.",
-        "A reused-ISO retest may use KVM for disk installation and BIOS/UEFI boot, falling back to TCG. Ship animation and Esc toggling are checked by the full TCG build. Failed VM screens are captured and OCR text is written to diagnostics."
+        "A reused-ISO retest may use KVM for disk installation and BIOS/UEFI boot, falling back to TCG. Ship animation and Esc toggling are checked by the full TCG build. Failed VM screens are captured and OCR text is written to diagnostics.",
+        "The packages job must pass actual git/base-devel installation in an extracted OS root before the iso job can run. It exports hafthiOS-pacman-test logs."
       ]
     },
     {
@@ -74,7 +75,8 @@
         "Installs Plymouth, applies the quiet boot configuration, and masks the default early quit/wait services. The tty1 getty releases Plymouth with retain-splash just before starting the graphical session.",
         "Packages and validates the full ISO file register with package-inventory.py before calculating the final ISO checksum.",
         "Includes common Intel, AMD, Atheros, Realtek and Broadcom firmware, Wi-Fi authentication and PipeWire audio. Hardware support still requires real-device testing.",
-        "Includes rsync, arch-install-scripts, GRUB and filesystem tools for an offline installed-system copy."
+        "Includes rsync, arch-install-scripts, GRUB and filesystem tools for an offline installed-system copy.",
+        "Enables hafthios-package-keys.service to initialize package signing trust before the first desktop login."
       ]
     },
     {
@@ -116,7 +118,8 @@
         "Also opens the language and keyboard page using F3 and saves settings-screen.ppm before returning to the guide and desktop.",
         "After testing the live desktop, drives the VM console to install onto its newly created disposable 16 GiB disk. The ISO contains no automatic installer test service.",
         "Detaches the ISO, boots the disk under BIOS and OVMF UEFI, logs in with a throwaway test password and verifies persisted Swedish settings, ext4 root and removal of live privileges.",
-        "Synchronizes real core/extra repository metadata in the disposable live VM and verifies git and base-devel are available before installing to disk."
+        "Installs git and base-devel with pacman -Syu in the live VM, validates their executables, and then copies that system to disk.",
+        "Waits for a newly created focused Hafthi window rather than accepting a stale focus report before typing the package/installation test script."
       ]
     },
     {
@@ -544,6 +547,36 @@
       "details": [
         "Uses the geographically routed geo.mirror.pkgbuild.com server with literal $repo and $arch placeholders.",
         "The live filesystem copy preserves this configuration on disk. Package signature checking is unchanged."
+      ]
+    },
+    {
+      "path": "live/etc/systemd/system/hafthios-package-keys.service",
+      "purpose": "Initializes the local trusted Arch package keyring before the desktop is available.",
+      "when": "First boot of a live or installed system without its successful keyring marker.",
+      "connections": [
+        "scripts/build-iso.sh",
+        "scripts/test-pacman.sh"
+      ],
+      "details": [
+        "Runs pacman-key --init and --populate archlinux as root, using the bundled Arch trust data.",
+        "Creates a completion marker only after both commands succeed; failed initialization can retry at the next boot.",
+        "Retained on disk installation. Package signature checks remain required."
+      ]
+    },
+    {
+      "path": "scripts/test-pacman.sh",
+      "purpose": "Performs real signed package installations before permitting a new ISO build.",
+      "when": "The packages CI job, in an isolated privileged Arch container.",
+      "connections": [
+        ".github/workflows/build.yml",
+        "live/etc/pacman.d/mirrorlist",
+        "live/etc/systemd/system/hafthios-package-keys.service"
+      ],
+      "details": [
+        "Extracts the existing Hafthi OS SquashFS into a temporary filesystem; host disks are not selected or formatted.",
+        "Applies the pending mirror configuration, discards only the disposable root keyring, then runs the exact key initialization commands from the shipped service.",
+        "Requires trusted package signatures, runs a full pacman upgrade with git and base-devel, executes git and make, then verifies a second signed git installation.",
+        "The ISO job depends on this successful test. Extracted test files are removed on exit."
       ]
     }
   ]

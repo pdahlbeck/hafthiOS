@@ -12,7 +12,34 @@ permissions:
   contents: read
   actions: read
 jobs:
+  packages:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download existing Hafthi OS for package installation test
+        uses: actions/download-artifact@v4
+        with:
+          name: hafthiOS-prototype
+          path: package-source
+          github-token: ${{ github.token }}
+          run-id: 37428040559
+      - name: Install signed packages in extracted Hafthi OS before building an ISO
+        run: |
+          set -o pipefail
+          docker run --rm --privileged \
+            -v "$PWD:/project" -w /project archlinux:base \
+            bash -lc 'pacman -Syu --noconfirm arch-install-scripts squashfs-tools libisoburn && bash scripts/test-pacman.sh package-source/*.iso' \
+            2>&1 | tee pacman-install-test.log
+      - name: Upload package installation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hafthiOS-pacman-test
+          path: pacman-install-test.log
+          retention-days: 14
   iso:
+    needs: packages
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
