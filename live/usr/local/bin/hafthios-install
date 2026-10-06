@@ -119,8 +119,6 @@ def configure(root, request):
     for path in ('etc/systemd/system/getty@tty1.service.d/autologin.conf',
                  'etc/sudoers.d/hafthios-live', 'etc/mkinitcpio.conf.d/archiso.conf',
                  'root/customize_airootfs.sh', 'root/.bash_profile',
-                 'etc/systemd/system/plymouth-quit.service',
-                 'etc/systemd/system/plymouth-quit-wait.service',
                  'etc/machine-id', 'var/lib/dbus/machine-id',
                  'home/hafthi/.config/hafthios/chrome/SingletonLock',
                  'home/hafthi/.config/hafthios/chrome/SingletonCookie',
@@ -138,12 +136,14 @@ def configure(root, request):
     console_keymap = 'sv-latin1' if keyboard == 'se' else 'us'
     write(root, '/etc/vconsole.conf', f'KEYMAP={console_keymap}\n')
     write(root, '/etc/sudoers.d/hafthios-wheel', '%wheel ALL=(ALL:ALL) ALL\n', 0o440)
-    write(root, '/etc/systemd/system/getty@tty1.service.d/plymouth.conf',
-          '[Service]\nExecStartPre=-/usr/bin/plymouth quit --retain-splash\n')
+    # greetd owns tty1 only on the installed system; other TTYs remain available.
+    (root / 'etc/systemd/system/getty@tty1.service.d/plymouth.conf').unlink(missing_ok=True)
+    write(root, '/etc/greetd/config.toml',
+          '[terminal]\nvt = 1\n\n[general]\nsource_profile = false\n\n'
+          '[default_session]\nuser = "greeter"\n'
+          f'command = "env LANG={locale} XKB_DEFAULT_LAYOUT={keyboard} /usr/bin/cage -s -- /usr/bin/gtkgreet -s /etc/greetd/hafthios.css -c /usr/local/bin/hafthios-installed-session"\n')
     write(root, '/home/hafthi/.bash_profile',
-          'if [[ -f "$HOME/.config/hafthios/environment" ]]; then source "$HOME/.config/hafthios/environment"; fi\n'
-          'if [[ $(tty) == /dev/tty1 && -z ${HAFTHIOS_SESSION_STARTED:-} ]]; then\n'
-          ' export HAFTHIOS_SESSION_STARTED=1\n niri-session\nfi\n')
+          'if [[ -f "$HOME/.config/hafthios/environment" ]]; then source "$HOME/.config/hafthios/environment"; fi\n')
     write(root, '/etc/mkinitcpio.conf',
           'MODULES=()\nBINARIES=()\nFILES=()\nHOOKS=(base udev plymouth autodetect microcode modconf kms keyboard keymap consolefont block filesystems fsck)\n')
     write(root, '/etc/mkinitcpio.d/linux.preset',
@@ -161,8 +161,8 @@ def configure(root, request):
     command(['arch-chroot', str(root), 'runuser', '-u', 'hafthi', '--',
              'python3', '/usr/local/bin/hafthios-settings', '--language', language, '--keyboard', keyboard])
     command(['arch-chroot', str(root), 'chown', '-R', 'hafthi:hafthi', '/home/hafthi'])
-    command(['arch-chroot', str(root), 'systemctl', 'enable', 'NetworkManager.service'])
-    command(['arch-chroot', str(root), 'systemctl', 'set-default', 'multi-user.target'])
+    command(['arch-chroot', str(root), 'systemctl', 'enable', 'NetworkManager.service', 'greetd.service'])
+    command(['arch-chroot', str(root), 'systemctl', 'set-default', 'graphical.target'])
     command(['arch-chroot', str(root), 'systemd-machine-id-setup'])
     phase('Building the installed boot image')
     command(['arch-chroot', str(root), 'mkinitcpio', '-P'])

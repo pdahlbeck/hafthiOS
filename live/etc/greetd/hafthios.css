@@ -1,0 +1,28 @@
+window {
+    background-color: #101e28;
+    background-image: url("file:///usr/share/plymouth/themes/hafthios/ship.png");
+    background-repeat: no-repeat;
+    background-size: 280px 280px;
+    background-position: center 12%;
+    color: #edf7f8;
+    font-family: "DejaVu Sans";
+    font-size: 18px;
+}
+box#body {
+    background-color: rgba(16, 30, 40, 0.96);
+    border: 2px solid #73e6df;
+    border-radius: 16px;
+    padding: 36px;
+}
+entry {
+    background: #20343e;
+    color: #edf7f8;
+    border-radius: 8px;
+    padding: 10px;
+}
+button {
+    background: #73e6df;
+    color: #101e28;
+    border-radius: 8px;
+    padding: 10px 18px;
+}

@@ -263,22 +263,14 @@ with tempfile.TemporaryDirectory() as tmp:
         # The sole target is a newly created disposable 16 GiB VM disk.
         # Feed a test script through the actual VM console; no auto-erasing service
         # or test backdoor is shipped in the ISO.
-        previous_text = serial_path.read_text(errors='replace')
-        previous_lines = [line for line in previous_text.splitlines() if line.startswith('HAFTHIOS_DESKTOP_READY ')]
-        previous_windows = json.loads(previous_lines[-1].split(' ', 1)[1]) if previous_lines else []
-        previous_ids = {window.get('id') for window in previous_windows}
-        qmp_request(sock_path, 'send-key', {'keys':[{'type':'qcode','data':'meta_l'}, {'type':'qcode','data':'ret'}]})
-        deadline = time.monotonic() + 90
-        while time.monotonic() < deadline:
-            text = serial_path.read_text(errors='replace')
-            lines = [line for line in text.splitlines() if line.startswith('HAFTHIOS_DESKTOP_READY ')]
-            windows = json.loads(lines[-1].split(' ', 1)[1]) if lines else []
-            if any(window.get('id') not in previous_ids and window.get('app_id', '').lower() == 'se.dahlbeck.hafthi' and window.get('is_focused') for window in windows):
-                break
-            time.sleep(1)
-        else:
-            raise RuntimeError('The installation test terminal did not receive focus')
-        time.sleep(3)
+        # A real text console is deterministic even if Chrome retains focus.
+        # The live hafthi account has an empty password; installed PAM is separate.
+        qmp_request(sock_path, 'send-key', {'keys':[
+            {'type':'qcode','data':'ctrl'}, {'type':'qcode','data':'alt'},
+            {'type':'qcode','data':'f2'}]})
+        time.sleep(5)
+        type_text(sock_path, 'hafthi')
+        time.sleep(5)
         type_text(sock_path, 'echo HAFTHIOS_INSTALL_CONSOLE_READY > /dev/ttyS0')
         deadline = time.monotonic() + 45
         while time.monotonic() < deadline:
@@ -348,10 +340,32 @@ with open('/dev/ttyS0','w') as serial: serial.write('HAFTHIOS_INSTALL_OK\\n')
                 '-qmp', f'unix:{sock_path},server=on,wait=off', '-no-reboot', *extra,
             ], stdout=subprocess.DEVNULL, stderr=open(out / ('installed-' + firmware + '-qemu.log'), 'w'))
             # Real firmware + GRUB boot from disk, with the ISO physically absent.
-            time.sleep(90)
-            capture_screen(sock_path, out / ('installed-' + firmware + '-login.ppm'))
+            login_screen = out / ('installed-' + firmware + '-login.ppm')
+            def wait_greeter(words, timeout=240):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    if process.poll() is not None:
+                        raise RuntimeError('Installed VM exited before graphical login')
+                    capture_screen(sock_path, login_screen)
+                    ocr = subprocess.run(['tesseract', str(login_screen), 'stdout'],
+                                         capture_output=True, text=True, timeout=20).stdout.lower()
+                    if any(word in ocr for word in words):
+                        return ocr
+                    time.sleep(3)
+                raise RuntimeError('Graphical login prompt did not appear: ' + ocr)
+            wait_greeter(('username', 'användarnamn'))
+            if 'HAFTHIOS_INSTALLED_READY ' in serial_path.read_text(errors='replace'):
+                raise RuntimeError('The desktop started before password authentication')
             type_text(sock_path, 'hafthi')
-            time.sleep(3)
+            wait_greeter(('password', 'lösenord'), timeout=45)
+            type_text(sock_path, 'wrongpassword123')
+            # gtkgreet returns to a fresh username entry after PAM rejects login.
+            wait_greeter(('login failed', 'inloggning misslyckades'), timeout=60)
+            capture_screen(sock_path, out / ('installed-' + firmware + '-wrong-password.ppm'))
+            if 'HAFTHIOS_INSTALLED_READY ' in serial_path.read_text(errors='replace'):
+                raise RuntimeError('A wrong password opened the desktop')
+            type_text(sock_path, 'hafthi')
+            wait_greeter(('password', 'lösenord'), timeout=45)
             type_text(sock_path, 'testpassword123')
             deadline = time.monotonic() + 240
             while time.monotonic() < deadline:
@@ -383,7 +397,15 @@ with open('/dev/ttyS0','w') as serial: serial.write('HAFTHIOS_INSTALL_OK\\n')
             else:
                 raise RuntimeError('Copied Chrome profile did not open on installed ' + firmware)
             capture_screen(sock_path, out / ('installed-' + firmware + '-chrome.ppm'))
-            print('Installed ' + firmware.upper() + ' disk boot passed: password login, Hafthi, copied Chrome profile, persistent Swedish settings, ext4 root and live policy removal.')
+            # Niri's quit action asks for confirmation; Enter returns to greetd.
+            qmp_request(sock_path, 'send-key', {'keys':[
+                {'type':'qcode','data':'meta_l'}, {'type':'qcode','data':'shift'},
+                {'type':'qcode','data':'e'}]})
+            time.sleep(3)
+            type_text(sock_path, '')
+            wait_greeter(('username', 'användarnamn'), timeout=90)
+            capture_screen(sock_path, out / ('installed-' + firmware + '-logout.ppm'))
+            print('Installed ' + firmware.upper() + ' disk boot passed: wrong password rejected, graphical login, Hafthi, Chrome, persistent Swedish settings, ext4 root, live policy removal and logout to greeter.')
             process.terminate()
             process.wait(timeout=20)
 

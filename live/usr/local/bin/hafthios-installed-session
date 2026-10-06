@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# PAM has already authenticated the user before greetd runs this command.
+if (( EUID == 0 )); then echo 'Start this session as an authenticated user.' >&2; exit 1; fi
+if [[ -f "$HOME/.config/hafthios/environment" ]]; then
+    source "$HOME/.config/hafthios/environment"
+fi
+export HAFTHIOS_SESSION_STARTED=1
+exec /usr/bin/niri-session

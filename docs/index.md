@@ -39,3 +39,7 @@ Each record includes its layer, path, type, byte size where applicable, permissi
 The local database is `/usr/share/doc/hafthios/file-register.sqlite`. A copy is also at `/hafthios-file-register.sqlite` in the ISO filesystem. The build exports `hafthios-file-register.csv` and `hafthios-file-register.sqlite` next to the ISO, with final container sizes. The embedded register leaves the final compressed live-image size unspecified because that container is generated after embedding the register. Every embedded layer/path/type is compared against a fresh extraction of the final ISO.
 
 Choose **Project source guide** for the separate, detailed source explanations and snapshots.
+
+## Installed graphical login
+
+The installer enables greetd on tty1 after Plymouth, with an unprivileged Cage/gtkgreet login screen. PAM checks the installation password before `hafthios-installed-session` loads saved user settings and starts Niri. Live media keep the trial/install welcome screen. Other TTYs remain available for recovery.

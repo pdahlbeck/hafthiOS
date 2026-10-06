@@ -25,6 +25,7 @@ file_permissions+=(
   ["/usr/local/bin/hafthios-chrome"]="0:0:755"
   ["/usr/local/bin/hafthios-settings"]="0:0:755"
   ["/usr/local/bin/hafthios-install"]="0:0:755"
+  ["/usr/local/bin/hafthios-installed-session"]="0:0:755"
   ["/usr/local/bin/hafthios-terminal"]="0:0:755"
   ["/root/customize_airootfs.sh"]="0:0:755"
   ["/etc/sudoers.d/hafthios-live"]="0:0:440"
@@ -46,6 +47,8 @@ mkinitcpio-archiso
 syslinux
 plymouth
 cage
+greetd
+greetd-gtkgreet
 foot
 gtk4
 python
@@ -83,7 +86,7 @@ PACKAGES
 mkdir -p "$profile/airootfs/etc/systemd/system/multi-user.target.wants"
 ln -sf /usr/lib/systemd/system/NetworkManager.service "$profile/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
 ln -sf ../hafthios-package-keys.service "$profile/airootfs/etc/systemd/system/multi-user.target.wants/hafthios-package-keys.service"
-# Getty owns the splash handoff; prevent the default early quit/wait pair.
+# Live getty or installed greetd owns the splash handoff; prevent early quit/wait.
 ln -sf /dev/null "$profile/airootfs/etc/systemd/system/plymouth-quit.service"
 ln -sf /dev/null "$profile/airootfs/etc/systemd/system/plymouth-quit-wait.service"
 mkdir -p "$root/out"

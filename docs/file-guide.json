@@ -14,7 +14,7 @@
       ],
       "details": [
         "The image is an x86_64 live USB with an offline whole-disk installer. Installation erases exactly the disk reviewed and confirmed by the user.",
-        "Documents account setup, BIOS/UEFI boot, settings persistence, lack of Secure Boot/custom partitions/dual boot, and the initial text login.",
+        "Documents account setup, BIOS/UEFI boot, settings persistence, lack of Secure Boot/custom partitions/dual boot, and the graphical password login.",
         "Downloads contain an ISO, checksum, measured size, file register and VM diagnostics."
       ]
     },
@@ -577,6 +577,45 @@
         "Applies the pending mirror configuration, discards only the disposable root keyring, then runs the exact key initialization commands from the shipped service.",
         "Requires trusted package signatures, runs a full pacman upgrade with git and base-devel, executes git and make, then verifies a second signed git installation.",
         "The ISO job depends on this successful test. Extracted test files are removed on exit."
+      ]
+    },
+    {
+      "path": "live/etc/greetd/hafthios.css",
+      "purpose": "Styles the installed graphical password screen with the ship and Hafthi colors.",
+      "when": "Used during installed password login.",
+      "connections": [
+        "live/usr/local/bin/hafthios-install",
+        "scripts/build-iso.sh"
+      ],
+      "details": [
+        "The live trial session keeps its existing welcome screen.",
+        "Password authentication is performed by greetd and the system PAM configuration."
+      ]
+    },
+    {
+      "path": "live/etc/systemd/system/greetd.service.d/hafthios.conf",
+      "purpose": "Hands Plymouth over to greetd on installed systems and prevents tty1 conflicts.",
+      "when": "Used during installed password login.",
+      "connections": [
+        "live/usr/local/bin/hafthios-install",
+        "scripts/build-iso.sh"
+      ],
+      "details": [
+        "The live trial session keeps its existing welcome screen.",
+        "Password authentication is performed by greetd and the system PAM configuration."
+      ]
+    },
+    {
+      "path": "live/usr/local/bin/hafthios-installed-session",
+      "purpose": "Starts the authenticated Niri session with saved language and keyboard settings.",
+      "when": "Used during installed password login.",
+      "connections": [
+        "live/usr/local/bin/hafthios-install",
+        "scripts/build-iso.sh"
+      ],
+      "details": [
+        "The live trial session keeps its existing welcome screen.",
+        "Password authentication is performed by greetd and the system PAM configuration."
       ]
     }
   ]

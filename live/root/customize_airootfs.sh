@@ -7,6 +7,9 @@ for repository in core extra; do
 done
 useradd --create-home --uid 1000 --user-group --groups wheel,uucp,audio,video --shell /bin/bash hafthi
 passwd -d hafthi
+# Arch greetd uses this unprivileged account for the graphical greeter.
+getent passwd greeter >/dev/null || useradd --system --create-home --home-dir /var/lib/greetd --shell /usr/bin/nologin greeter
+passwd -l greeter
 chown -R hafthi:hafthi /home/hafthi
 niri validate --config /etc/niri/config.kdl
 

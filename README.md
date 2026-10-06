@@ -110,11 +110,14 @@ the VM after changing its display adapter. Logs remain in the live home under
 Start with an empty disposable VM disk of at least 16 GiB. Secure Boot is not
 supported. The installer writes a removable UEFI fallback loader without changing
 firmware NVRAM. The BIOS boot partition supports legacy firmware on the same disk.
-At present the installed login is a text login followed by the Niri desktop.
+After the animated ship splash, the installed system shows a graphical password
+login. Sign in as `hafthi` with the password chosen during installation; Niri and
+Hafthi start with your saved language and keyboard settings. Logging out returns
+to the greeter. Ctrl+Alt+F2 opens a text console for recovery.
 
 The automated VM test uses a throwaway password only for its newly created virtual
 disk. There is no automatic disk-erasing test service or installer backdoor in the
-ISO. It verifies real disk boot with the optical image absent, password login,
+ISO. It verifies real disk boot with the optical image absent, rejection of a wrong password, graphical password login,
 copied Chrome profile, Swedish language/layout persistence, ext4 root and removal of the live login/sudo
 policy. Real hardware still needs validation before using disks with valuable data.
 

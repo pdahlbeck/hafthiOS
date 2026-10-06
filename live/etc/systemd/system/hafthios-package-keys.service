@@ -1,7 +1,7 @@
 [Unit]
 Description=Initialize trusted Arch package signing keys
 After=systemd-random-seed.service
-Before=getty@tty1.service archlinux-keyring-wkd-sync.service
+Before=greetd.service getty@tty1.service archlinux-keyring-wkd-sync.service
 ConditionPathExists=!/etc/pacman.d/gnupg/hafthios-ready
 
 [Service]

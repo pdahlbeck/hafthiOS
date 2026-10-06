@@ -48,7 +48,7 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -v
           python3 -m py_compile live/usr/local/bin/hafthios-welcome
-          bash -n scripts/build-iso.sh live/usr/local/bin/hafthios-session live/root/.bash_profile
+          bash -n scripts/build-iso.sh live/usr/local/bin/hafthios-session live/usr/local/bin/hafthios-installed-session live/root/.bash_profile
       - name: Select existing ISO for test-only changes
         id: source_iso
         env:
