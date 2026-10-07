@@ -7,6 +7,8 @@ import struct
 import threading
 from types import SimpleNamespace
 import unittest
+import re
+import unicodedata
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'live/usr/local/bin/hafthios-greeter'
@@ -14,6 +16,17 @@ Client = runpy.run_path(str(SOURCE))['Client']
 
 
 class GreeterTests(unittest.TestCase):
+    def test_swedish_ocr_labels_match_without_accents_and_with_line_breaks(self):
+        tree = ast.parse((ROOT / 'scripts/test-boot.py').read_text())
+        function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'normalize_screen_text')
+        namespace = {'re': re, 'unicodedata': unicodedata}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), '<screen text>', 'exec'), namespace)
+        normalize = namespace['normalize_screen_text']
+        for label, ocr in [('Användarnamn', 'Anvandarnamn'), ('Lösenord', 'Losenord'),
+                           ('Inloggning misslyckades', 'Inloggning\n\nmisslyckades')]:
+            self.assertIn(normalize(label), normalize(ocr))
+        self.assertNotIn(normalize('Användarnamn'), normalize('Pausa vågorna'))
+
     def test_fragmented_utf8_socket_response_and_native_length(self):
         left, right = socket.socketpair()
         client = Client.__new__(Client)

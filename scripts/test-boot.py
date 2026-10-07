@@ -10,6 +10,12 @@ import socket
 import subprocess
 import tempfile
 import time
+import unicodedata
+
+def normalize_screen_text(value):
+    # OCR engines may omit Swedish accents and split a label across lines.
+    value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode().lower()
+    return re.sub(r'\s+', ' ', value).strip()
 
 def window_present(text, app_id):
     for line in reversed(text.splitlines()):
@@ -371,9 +377,9 @@ with tempfile.TemporaryDirectory() as tmp:
                     if process.poll() is not None:
                         raise RuntimeError('Installed VM exited before graphical login')
                     capture_screen(sock_path, login_screen)
-                    ocr = subprocess.run(['tesseract', str(login_screen), 'stdout'],
+                    ocr = subprocess.run(['tesseract', str(login_screen), 'stdout', '--psm', '11'],
                                          capture_output=True, text=True, timeout=20).stdout.lower()
-                    if any(word in ocr for word in words):
+                    if any(normalize_screen_text(word) in normalize_screen_text(ocr) for word in words):
                         return ocr
                     time.sleep(3)
                 raise RuntimeError('Graphical login prompt did not appear: ' + ocr)
