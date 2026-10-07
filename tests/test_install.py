@@ -72,6 +72,10 @@ class InstallationSafetyTests(unittest.TestCase):
         self.assertEqual(held, set())
         self.assertEqual(events[-1]['data'], {'down': False, 'key': {'type':'qcode','data':'ret'}})
         events.clear()
+        namespace['type_text']('mock-socket', 'hafthi', submit=False)
+        self.assertFalse(any(event['data']['key']['data'] == 'ret' for event in events))
+        self.assertEqual(sum(event['data']['down'] for event in events), len('hafthi'))
+        events.clear()
         with self.assertRaises(ValueError):
             namespace['type_text']('mock-socket', 'echo unsupported!')
         self.assertEqual(events, [])

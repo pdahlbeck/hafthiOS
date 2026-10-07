@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Boot the ISO with TCG and a disposable disk; check GTK's ready marker."""
 import json
+import re
 import base64
 import shutil
 import os
@@ -42,7 +43,7 @@ def qmp_request(sock_path, name, arguments):
         command('qmp_capabilities')
         return command(name, arguments)
 
-def type_text(sock_path, text):
+def type_text(sock_path, text, submit=True):
     special = {' ': ('spc', False), '-': ('minus', False), '=': ('equal', False),
                '+': ('equal', True), '/': ('slash', False), '|': ('backslash', True),
                '>': ('dot', True), '.': ('dot', False), '_': ('minus', True), '&': ('7', True)}
@@ -70,7 +71,8 @@ def type_text(sock_path, text):
         else:
             key, shift = special[character]
         press((['shift'] if shift else []) + [key])
-    press(['ret'])
+    if submit:
+        press(['ret'])
 
 
 def capture_screen(sock_path, filename):
@@ -268,8 +270,35 @@ with tempfile.TemporaryDirectory() as tmp:
         qmp_request(sock_path, 'send-key', {'keys':[
             {'type':'qcode','data':'ctrl'}, {'type':'qcode','data':'alt'},
             {'type':'qcode','data':'f2'}]})
-        time.sleep(5)
-        type_text(sock_path, 'hafthi')
+        console_screen = out / 'installer-console.ppm'
+        deadline = time.monotonic() + 90
+        while time.monotonic() < deadline:
+            capture_screen(sock_path, console_screen)
+            console_text = subprocess.run(['tesseract', str(console_screen), 'stdout'],
+                                          capture_output=True, text=True, timeout=20).stdout.lower()
+            if 'login:' in console_text:
+                break
+            time.sleep(2)
+        else:
+            raise RuntimeError('The live tty2 login prompt did not appear: ' + console_text)
+        # Wait for agetty to initialize instead of racing its first key event.
+        # A blank submission wakes the console without submitting a username.
+        type_text(sock_path, '')
+        time.sleep(2)
+        for attempt in range(3):
+            qmp_request(sock_path, 'send-key', {'keys':[
+                {'type':'qcode','data':'ctrl'}, {'type':'qcode','data':'u'}]})
+            time.sleep(1)
+            type_text(sock_path, 'hafthi', submit=False)
+            time.sleep(1)
+            capture_screen(sock_path, console_screen)
+            console_text = subprocess.run(['tesseract', str(console_screen), 'stdout'],
+                                          capture_output=True, text=True, timeout=20).stdout.lower()
+            if re.search(r'login:\s*hafthi\b', console_text):
+                type_text(sock_path, '')
+                break
+        else:
+            raise RuntimeError('The live login username was not received intact: ' + console_text)
         time.sleep(5)
         type_text(sock_path, 'echo HAFTHIOS_INSTALL_CONSOLE_READY > /dev/ttyS0')
         deadline = time.monotonic() + 45

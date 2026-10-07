@@ -119,7 +119,8 @@
         "After testing the live desktop, drives the VM console to install onto its newly created disposable 16 GiB disk. The ISO contains no automatic installer test service.",
         "Detaches the ISO, boots the disk under BIOS and OVMF UEFI, logs in with a throwaway test password and verifies persisted Swedish settings, ext4 root and removal of live privileges.",
         "Installs git and base-devel with pacman -Syu in the live VM, validates their executables, and then copies that system to disk.",
-        "Waits for a newly created focused Hafthi window rather than accepting a stale focus report before typing the package/installation test script."
+        "Waits for a newly created focused Hafthi window rather than accepting a stale focus report before typing the package/installation test script.",
+        "Waits for the live text login prompt and verifies the complete username before submitting it, so a console startup race cannot silently drop its first character."
       ]
     },
     {
