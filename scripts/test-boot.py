@@ -134,7 +134,8 @@ with tempfile.TemporaryDirectory() as tmp:
     sock_path = tmp / 'qmp.sock'
     serial_path = out / 'boot-serial.log'
     process = subprocess.Popen([
-        'qemu-system-x86_64', '-accel', acceleration, '-m', '4096', '-smp', '2',
+        # The live overlay uses half of RAM; signed full upgrades need headroom.
+        'qemu-system-x86_64', '-accel', acceleration, '-m', '8192', '-smp', '2',
         '-nic', 'user,model=virtio-net-pci',
         '-cpu', cpu_model, '-cdrom', str(iso), '-boot', 'd',
         '-drive', f'file={payload_iso},format=raw,media=cdrom,readonly=on',
