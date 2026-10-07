@@ -120,7 +120,8 @@
         "Detaches the ISO, boots the disk under BIOS and OVMF UEFI, logs in with a throwaway test password and verifies persisted Swedish settings, ext4 root and removal of live privileges.",
         "Installs git and base-devel with pacman -Syu in the live VM, validates their executables, and then copies that system to disk.",
         "Waits for a newly created focused Hafthi window rather than accepting a stale focus report before typing the package/installation test script.",
-        "Waits for the live text login prompt and verifies the complete username before submitting it, so a console startup race cannot silently drop its first character."
+        "Waits for the live text login prompt and verifies the complete username before submitting it, so a console startup race cannot silently drop its first character.",
+        "Sends complete QMP key chords with non-overlapping release timers and uses a virtio network adapter in the disposable VMs. Kernel messages may wrap the echoed login username onto a new line."
       ]
     },
     {

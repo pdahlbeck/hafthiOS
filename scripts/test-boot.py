@@ -54,16 +54,18 @@ def type_text(sock_path, text, submit=True):
     def event(key, down):
         return {'type': 'key', 'data': {'down': down, 'key': {'type': 'qcode', 'data': key}}}
 
-    # send-key uses a shared release timer; overlapping chords can leave Shift
-    # held during long text. Explicit down/up events preserve every character.
+    # Release any earlier shortcut, then send complete key chords one at a time.
+    # The pause exceeds send-key's hold-time so timers never overlap.
     modifiers = ('shift', 'shift_r', 'ctrl', 'ctrl_r', 'alt', 'alt_r', 'meta_l', 'meta_r')
     qmp_request(sock_path, 'input-send-event', {'events': [event(key, False) for key in modifiers]})
+    time.sleep(0.25)
 
     def press(keys):
-        qmp_request(sock_path, 'input-send-event', {'events': [event(key, True) for key in keys]})
-        time.sleep(0.04)
-        qmp_request(sock_path, 'input-send-event', {'events': [event(key, False) for key in reversed(keys)]})
-        time.sleep(0.04)
+        qmp_request(sock_path, 'send-key', {
+            'keys': [{'type': 'qcode', 'data': key} for key in keys],
+            'hold-time': 80,
+        })
+        time.sleep(0.20)
 
     for character in text:
         if character.isalnum():
@@ -127,6 +129,7 @@ with tempfile.TemporaryDirectory() as tmp:
     serial_path = out / 'boot-serial.log'
     process = subprocess.Popen([
         'qemu-system-x86_64', '-accel', acceleration, '-m', '4096', '-smp', '2',
+        '-nic', 'user,model=virtio-net-pci',
         '-cpu', cpu_model, '-cdrom', str(iso), '-boot', 'd',
         '-drive', f'file={disk},format=raw,if=virtio',
         '-vga', 'none', '-device', 'virtio-vga-gl', '-display', 'sdl,gl=on',
@@ -294,7 +297,7 @@ with tempfile.TemporaryDirectory() as tmp:
             capture_screen(sock_path, console_screen)
             console_text = subprocess.run(['tesseract', str(console_screen), 'stdout'],
                                           capture_output=True, text=True, timeout=20).stdout.lower()
-            if re.search(r'login:\s*hafthi\b', console_text):
+            if re.search(r'(?:login:\s*|\n)\s*hafthi(?:\s|$)', console_text):
                 type_text(sock_path, '')
                 break
         else:
@@ -363,6 +366,7 @@ with open('/dev/ttyS0','w') as serial: serial.write('HAFTHIOS_INSTALL_OK\\n')
                          '-drive', 'if=pflash,format=raw,file=' + str(variables)]
             process = subprocess.Popen([
                 'qemu-system-x86_64', '-accel', acceleration, '-m', '4096', '-smp', '2', '-cpu', cpu_model,
+                '-nic', 'user,model=virtio-net-pci',
                 '-boot', 'c', '-drive', f'file={disk},format=raw,if=virtio',
                 '-vga', 'none', '-device', 'virtio-vga-gl', '-display', 'sdl,gl=on',
                 '-serial', f'file:{serial_path}', '-monitor', 'none',

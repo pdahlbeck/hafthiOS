@@ -47,38 +47,34 @@ class InstallationSafetyTests(unittest.TestCase):
     def test_vm_console_handles_the_complete_install_command_before_sending_keys(self):
         tree = ast.parse((ROOT / 'scripts/test-boot.py').read_text())
         function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'type_text')
-        namespace = {'time': SimpleNamespace(sleep=lambda _: None)}
-        events = []
-        namespace['qmp_request'] = lambda _socket, _name, args: events.extend(args['events'])
+        sleeps = []
+        namespace = {'time': SimpleNamespace(sleep=sleeps.append)}
+        calls = []
+        namespace['qmp_request'] = lambda _socket, name, args: calls.append((name, args))
         exec(compile(ast.Module(body=[function], type_ignores=[]), '<console test>', 'exec'), namespace)
-        namespace['type_text']('mock-socket', 'echo Q+/== | base64 -d | sudo python3 > /dev/ttyS0 2>&1')
-        held = set()
+        command = 'echo Q+/== | base64 -d | sudo python3 > /dev/ttyS0 2>&1'
+        namespace['type_text']('mock-socket', command)
         typed = []
         shifted = {'7':'&', 'equal':'+', 'backslash':'|', 'dot':'>', 'minus':'_'}
         plain = {'spc':' ', 'equal':'=', 'backslash':'\\', 'dot':'.', 'minus':'-', 'slash':'/'}
-        for event in events:
-            data = event['data']
-            key = data['key']['data']
-            if data['down']:
-                held.add(key)
-                if key not in ('shift','shift_r','ctrl','ctrl_r','alt','alt_r','meta_l','meta_r','ret'):
-                    if 'shift' in held:
-                        typed.append(shifted.get(key, key.upper()))
-                    else:
-                        typed.append(plain.get(key, key))
-            else:
-                held.discard(key)
-        self.assertEqual(''.join(typed), 'echo Q+/== | base64 -d | sudo python3 > /dev/ttyS0 2>&1')
-        self.assertEqual(held, set())
-        self.assertEqual(events[-1]['data'], {'down': False, 'key': {'type':'qcode','data':'ret'}})
-        events.clear()
+        self.assertTrue(all(not e['data']['down'] for e in calls[0][1]['events']))
+        for name, args in calls[1:]:
+            self.assertEqual(name, 'send-key')
+            self.assertLess(args['hold-time'] / 1000, min(sleeps))
+            keys = [key['data'] for key in args['keys']]
+            key = keys[-1]
+            if key != 'ret':
+                typed.append(shifted.get(key, key.upper()) if 'shift' in keys else plain.get(key, key))
+        self.assertEqual(''.join(typed), command)
+        self.assertEqual(calls[-1][1]['keys'], [{'type':'qcode','data':'ret'}])
+        calls.clear()
         namespace['type_text']('mock-socket', 'hafthi', submit=False)
-        self.assertFalse(any(event['data']['key']['data'] == 'ret' for event in events))
-        self.assertEqual(sum(event['data']['down'] for event in events), len('hafthi'))
-        events.clear()
+        self.assertFalse(any(key['data'] == 'ret' for name,args in calls if name == 'send-key' for key in args['keys']))
+        self.assertEqual(len(calls) - 1, len('hafthi'))
+        calls.clear()
         with self.assertRaises(ValueError):
             namespace['type_text']('mock-socket', 'echo unsupported!')
-        self.assertEqual(events, [])
+        self.assertEqual(calls, [])
 
     def test_partition_names_include_digit_separator_only_when_required(self):
         self.assertEqual(backend['partition_path']('/dev/vda',3), '/dev/vda3')
