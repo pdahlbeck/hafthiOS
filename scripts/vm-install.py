@@ -20,9 +20,13 @@ def main():
             if not servers.startswith('https://'):
                 raise RuntimeError('Missing HTTPS package servers for ' + repository)
         subprocess.run(['systemctl', 'start', 'hafthios-package-keys.service'], check=True, timeout=180)
+        # A live kernel cannot reboot into the upgrade before installing. Keep
+        # the EFI filesystem and its codepages loaded before pacman replaces
+        # /usr/lib/modules; ext4 and virtio are already used by the live boot.
+        subprocess.run(['modprobe', '-a', 'vfat', 'nls_cp437', 'nls_iso8859_1'], check=True, timeout=30)
         subprocess.run(['df', '-h', '/', '/run/archiso/cowspace'], check=True, timeout=30)
         subprocess.run(['pacman', '-Syu', '--noconfirm', '--needed', 'git', 'base-devel'], check=True, timeout=600)
-        subprocess.run(['pacman', '-Scc', '--noconfirm'], check=True, timeout=60)
+        subprocess.run(['pacman', '-Scc'], input='y\ny\n', text=True, check=True, timeout=60)
         subprocess.run(['git', '--version'], check=True, timeout=30)
         subprocess.run(['make', '--version'], check=True, timeout=30)
         print('HAFTHIOS_PACKAGE_REPOSITORIES_OK', flush=True)
