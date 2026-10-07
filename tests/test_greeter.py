@@ -16,6 +16,20 @@ Client = runpy.run_path(str(SOURCE))['Client']
 
 
 class GreeterTests(unittest.TestCase):
+    def test_ocr_prompt_tolerates_one_glyph_error_but_rejects_other_states(self):
+        tree = ast.parse((ROOT / 'scripts/test-boot.py').read_text())
+        functions = [n for n in tree.body if isinstance(n, ast.FunctionDef)
+                     and n.name in ('normalize_screen_text', 'screen_label_present')]
+        namespace = {'re': re, 'unicodedata': unicodedata}
+        exec(compile(ast.Module(body=functions, type_ignores=[]), '<screen labels>', 'exec'), namespace)
+        match = namespace['screen_label_present']
+        for text in ('Lösenord', 'lésenord', 'Loésenord', 'Losenor'):
+            self.assertTrue(match(text, 'Lösenord'), text)
+        self.assertTrue(match('Inloggning\nmisslyckades. Försök igen.', 'Inloggning misslyckades'))
+        for text in ('Pausa vågorna', 'Användarnamn', 'Logga in', 'lösen', 'xxsenord', 'xxlosenordxx'):
+            self.assertFalse(match(text, 'Lösenord'), text)
+        self.assertFalse(match('Inloggning lyckades', 'Inloggning misslyckades'))
+
     def test_swedish_ocr_labels_match_without_accents_and_with_line_breaks(self):
         tree = ast.parse((ROOT / 'scripts/test-boot.py').read_text())
         function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'normalize_screen_text')

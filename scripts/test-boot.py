@@ -17,6 +17,26 @@ def normalize_screen_text(value):
     value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode().lower()
     return re.sub(r'\s+', ' ', value).strip()
 
+def screen_label_present(text, label):
+    # Thin GTK glyphs can produce one wrong or extra character (e.g. lésenord).
+    # Match whole words, allowing at most one edit only in long label words.
+    # This detects prompts only; authentication still requires the guest's
+    # desktop marker, actual Hafthi window and rejection of a wrong password.
+    actual = re.findall(r'[a-z]+', normalize_screen_text(text))
+    expected = re.findall(r'[a-z]+', normalize_screen_text(label))
+    def matches(a, b):
+        if a == b:
+            return True
+        if len(b) < 7 or abs(len(a) - len(b)) > 1:
+            return False
+        if len(a) == len(b):
+            return sum(x != y for x, y in zip(a, b)) <= 1
+        longer, shorter = (a, b) if len(a) > len(b) else (b, a)
+        return any(longer[:i] + longer[i + 1:] == shorter for i in range(len(longer)))
+    return bool(expected) and any(
+        all(matches(a, b) for a, b in zip(actual[i:i + len(expected)], expected))
+        for i in range(len(actual) - len(expected) + 1))
+
 def window_present(text, app_id):
     for line in reversed(text.splitlines()):
         if line.startswith('HAFTHIOS_DESKTOP_READY '):
@@ -379,7 +399,7 @@ with tempfile.TemporaryDirectory() as tmp:
                     capture_screen(sock_path, login_screen)
                     ocr = subprocess.run(['tesseract', str(login_screen), 'stdout', '--psm', '11'],
                                          capture_output=True, text=True, timeout=20).stdout.lower()
-                    if any(normalize_screen_text(word) in normalize_screen_text(ocr) for word in words):
+                    if any(screen_label_present(ocr, word) for word in words):
                         return ocr
                     time.sleep(3)
                 raise RuntimeError('Graphical login prompt did not appear: ' + ocr)
