@@ -14,9 +14,11 @@ with (out / 'coastal-greeter.log').open('w') as log:
     process = subprocess.Popen([sys.executable, 'live/usr/local/bin/hafthios-greeter', '--preview'],
                                env=environment, stdout=log, stderr=log)
     try:
-        time.sleep(4)
+        time.sleep(6)
         if process.poll() is not None:
             raise RuntimeError('GTK greeter exited: ' + (out / 'coastal-greeter.log').read_text())
+        windows = subprocess.check_output(['xdotool', 'search', '--onlyvisible', '--pid', str(process.pid)], text=True)
+        subprocess.run(['xdotool', 'windowfocus', windows.splitlines()[0]], check=True)
         first = ImageGrab.grab(xdisplay=os.environ['DISPLAY'])
         first.save(out / 'coastal-greeter.png')
         time.sleep(2)

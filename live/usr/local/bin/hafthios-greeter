@@ -90,6 +90,7 @@ def draw_coast(ctx, width, height, elapsed, ship, cairo):
 def main():
     import gi
     gi.require_version('Gtk', '3.0')
+    gi.require_version('Gdk', '3.0')
     gi.require_foreign('cairo')
     import cairo
     from gi.repository import Gdk, GLib, Gtk
@@ -108,6 +109,8 @@ def main():
             self.moving, self.started = True, time.monotonic()
             self.connect('destroy', Gtk.main_quit)
             self.connect('key-press-event', self.key)
+            if preview:
+                self.set_default_size(1440, 900)
             self.fullscreen()
             settings = Gtk.Settings.get_default()
             settings.set_property('gtk-cursor-theme-name', 'Adwaita')
