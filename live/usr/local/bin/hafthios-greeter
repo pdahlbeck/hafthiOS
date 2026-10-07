@@ -96,6 +96,9 @@ def main():
     from gi.repository import Gdk, GLib, Gtk
 
     preview = os.sys.argv[1:] == ['--preview']
+    if preview:
+        import faulthandler
+        faulthandler.dump_traceback_later(10)
     if not preview and not os.environ.get('GREETD_SOCK'):
         raise SystemExit('Start through greetd; use --preview for visual review.')
     swedish = os.environ.get('LANG', '').startswith('sv')
@@ -175,6 +178,8 @@ def main():
             GLib.timeout_add(67, self.tick)
             self.show_all()
             self.entry.grab_focus()
+            if preview:
+                faulthandler.cancel_dump_traceback_later()
 
         def resize(self, _canvas, allocation):
             self.form.set_margin_end(int(allocation.width * .30) if allocation.width >= 1000 else 0)
@@ -280,7 +285,7 @@ def main():
             self.entry.grab_focus()
             return False
 
-    Greeter()
+    view = Greeter()
     Gtk.main()
 
 
