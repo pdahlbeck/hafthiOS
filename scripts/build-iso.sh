@@ -26,6 +26,7 @@ file_permissions+=(
   ["/usr/local/bin/hafthios-settings"]="0:0:755"
   ["/usr/local/bin/hafthios-install"]="0:0:755"
   ["/usr/local/bin/hafthios-installed-session"]="0:0:755"
+  ["/usr/local/bin/hafthios-greeter"]="0:0:755"
   ["/usr/local/bin/hafthios-terminal"]="0:0:755"
   ["/root/customize_airootfs.sh"]="0:0:755"
   ["/etc/sudoers.d/hafthios-live"]="0:0:440"
@@ -53,6 +54,8 @@ foot
 gtk4
 python
 python-gobject
+python-cairo
+adwaita-cursors
 mesa
 networkmanager
 wpa_supplicant

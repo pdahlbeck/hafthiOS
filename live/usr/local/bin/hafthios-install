@@ -141,7 +141,7 @@ def configure(root, request):
     write(root, '/etc/greetd/config.toml',
           '[terminal]\nvt = 1\n\n[general]\nsource_profile = false\n\n'
           '[default_session]\nuser = "greeter"\n'
-          f'command = "env LANG={locale} XKB_DEFAULT_LAYOUT={keyboard} /usr/bin/cage -s -- /usr/bin/gtkgreet -s /etc/greetd/hafthios.css -c /usr/local/bin/hafthios-installed-session"\n')
+          f'command = "env LANG={locale} XKB_DEFAULT_LAYOUT={keyboard} XCURSOR_THEME=Adwaita XCURSOR_SIZE=24 WLR_NO_HARDWARE_CURSORS=1 /usr/bin/cage -s -- /usr/local/bin/hafthios-greeter"\n')
     write(root, '/home/hafthi/.bash_profile',
           'if [[ -f "$HOME/.config/hafthios/environment" ]]; then source "$HOME/.config/hafthios/environment"; fi\n')
     write(root, '/etc/mkinitcpio.conf',

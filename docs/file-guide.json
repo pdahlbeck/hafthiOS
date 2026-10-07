@@ -583,15 +583,15 @@
     },
     {
       "path": "live/etc/greetd/hafthios.css",
-      "purpose": "Styles the installed graphical password screen with the ship and Hafthi colors.",
+      "purpose": "Styles the native coastal greeter with quiet typography and restrained input controls.",
       "when": "Used during installed password login.",
       "connections": [
         "live/usr/local/bin/hafthios-install",
         "scripts/build-iso.sh"
       ],
       "details": [
-        "The live trial session keeps its existing welcome screen.",
-        "Password authentication is performed by greetd and the system PAM configuration."
+        "No session chooser, visible command paths, image rectangle or large bordered panel.",
+        "Uses muted sage controls and readable field focus, error messages and animation-pause control."
       ]
     },
     {
@@ -632,6 +632,46 @@
         "Requires the explicit --disposable-vm argument and uses the normal live installer with its disk confirmation checks.",
         "Tests signed package transactions, installs to /dev/vda and reports progress over the VM serial console.",
         "It is never embedded in the distributable ISO or attached to installed BIOS/UEFI boot tests."
+      ]
+    },
+    {
+      "path": "live/usr/local/bin/hafthios-greeter",
+      "purpose": "Draws a quiet animated coast and authenticates the installed user through greetd and PAM.",
+      "when": "Cage launches it at installed boot and after logout.",
+      "connections": [
+        "live/usr/local/bin/hafthios-install",
+        "live/etc/greetd/hafthios.css",
+        "live/usr/local/bin/hafthios-installed-session"
+      ],
+      "details": [
+        "Native GTK fields support password masking and repeated PAM prompts. Socket exchanges run off the drawing thread; no credentials are logged or persisted.",
+        "Only a successful greetd authentication can launch the fixed installed session command. Preview mode never authenticates or launches a session.",
+        "Cairo draws slow wave fronts, shore, two gulls and the original Plymouth ship. Pause waves or F10 stops motion."
+      ]
+    },
+    {
+      "path": "tests/test_greeter.py",
+      "purpose": "Checks greetd framing and the authentication state machine without GTK or a real account.",
+      "when": "The unit suite runs before each ISO build.",
+      "connections": [
+        "live/usr/local/bin/hafthios-greeter"
+      ],
+      "details": [
+        "Exercises fragmented Unicode replies, closed sockets, masked secret prompts, failed authentication, repeated PAM messages and the fixed session command.",
+        "A start-session acknowledgement is required before the greeter exits."
+      ]
+    },
+    {
+      "path": "scripts/preview-greeter.py",
+      "purpose": "Renders the native coastal greeter under Xvfb before ISO construction.",
+      "when": "GitHub Actions runs this after unit checks.",
+      "connections": [
+        "live/usr/local/bin/hafthios-greeter",
+        ".github/workflows/build.yml"
+      ],
+      "details": [
+        "Captures a real GTK screenshot and fails on GTK diagnostics or an early exit.",
+        "Checks that waves change between frames and freeze after F10. Preview cannot authenticate or launch a desktop."
       ]
     }
   ]
