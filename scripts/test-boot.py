@@ -2,7 +2,6 @@
 """Boot the ISO with TCG and a disposable disk; check GTK's ready marker."""
 import json
 import re
-import base64
 import shutil
 import os
 import sys
@@ -122,6 +121,13 @@ out = pathlib.Path('out').resolve()
 iso = max(out.glob('*.iso'), key=lambda p: p.stat().st_mtime)
 with tempfile.TemporaryDirectory() as tmp:
     tmp = pathlib.Path(tmp)
+    # Test code is carried on separate read-only media, never inside the OS ISO.
+    payload = tmp / 'test-input'
+    payload.mkdir()
+    shutil.copyfile('scripts/vm-install.py', payload / 'install.py')
+    payload_iso = tmp / 'test-input.iso'
+    subprocess.run(['xorriso', '-as', 'mkisofs', '-quiet', '-V', 'hafthios-test',
+                    '-o', str(payload_iso), str(payload)], check=True, timeout=60)
     disk = tmp / 'disk.raw'
     with disk.open('wb') as stream:
         stream.truncate(16 * 1024**3)
@@ -131,6 +137,7 @@ with tempfile.TemporaryDirectory() as tmp:
         'qemu-system-x86_64', '-accel', acceleration, '-m', '4096', '-smp', '2',
         '-nic', 'user,model=virtio-net-pci',
         '-cpu', cpu_model, '-cdrom', str(iso), '-boot', 'd',
+        '-drive', f'file={payload_iso},format=raw,media=cdrom,readonly=on',
         '-drive', f'file={disk},format=raw,if=virtio',
         '-vga', 'none', '-device', 'virtio-vga-gl', '-display', 'sdl,gl=on',
         '-serial', f'file:{serial_path}', '-monitor', 'none',
@@ -266,8 +273,8 @@ with tempfile.TemporaryDirectory() as tmp:
         capture_screen(sock_path, out / 'chrome-screen.ppm')
         print('BIOS live VM boot passed: ' + ('ship, ' if acceleration == 'tcg' else '') + 'settings, guide, Hafthi and Chrome.', flush=True)
         # The sole target is a newly created disposable 16 GiB VM disk.
-        # Feed a test script through the actual VM console; no auto-erasing service
-        # or test backdoor is shipped in the ISO.
+        # Run a script from separate temporary read-only media through the real
+        # VM console. No test service or test payload is shipped in the OS ISO.
         # A real text console is deterministic even if Chrome retains focus.
         # The live hafthi account has an empty password; installed PAM is separate.
         qmp_request(sock_path, 'send-key', {'keys':[
@@ -312,26 +319,9 @@ with tempfile.TemporaryDirectory() as tmp:
         else:
             raise RuntimeError('The installation test console did not execute its readiness command')
         capture_screen(sock_path, out / 'installer-console.ppm')
-        script = """print('HAFTHIOS_INSTALL_STARTED', flush=True)
-import runpy, subprocess
-from pathlib import Path
-for repository in ('core', 'extra'):
-    servers = subprocess.check_output(['pacman-conf', '--repo', repository, 'Server'], text=True).strip()
-    if not servers.startswith('https://'):
-        raise RuntimeError('Missing HTTPS package servers for ' + repository)
-subprocess.run(['systemctl', 'start', 'hafthios-package-keys.service'], check=True, timeout=180)
-subprocess.run(['pacman', '-Syu', '--noconfirm', '--needed', 'git', 'base-devel'], check=True, timeout=600)
-subprocess.run(['git', '--version'], check=True, timeout=30)
-subprocess.run(['make', '--version'], check=True, timeout=30)
-print('HAFTHIOS_PACKAGE_REPOSITORIES_OK', flush=True)
-backend=runpy.run_path('/usr/local/bin/hafthios-install')
-plan=backend['make_plan']('/dev/vda')
-backend['install']({'token':plan['token'],'confirmation':plan['confirmation'],'password':'testpassword123','settings':{'language':'sv','keyboard':'se'}})
-with open('/dev/ttyS0','w') as serial: serial.write('HAFTHIOS_INSTALL_OK\\n')
-"""
-        script = 'import traceback\ntry:\n' + '\n'.join('    ' + line for line in script.splitlines()) + '\nexcept Exception:\n    traceback.print_exc()\n    print("HAFTHIOS_INSTALL_ERROR", flush=True)\n'
-        encoded = base64.b64encode(script.encode()).decode()
-        type_text(sock_path, 'echo ' + encoded + ' | base64 -d | sudo python3 > /dev/ttyS0 2>&1')
+        type_text(sock_path, 'sudo mount -o ro /dev/disk/by-label/hafthios-test /mnt')
+        time.sleep(3)
+        type_text(sock_path, 'sudo python3 /mnt/install.py --disposable-vm')
         deadline = time.monotonic() + 45
         while time.monotonic() < deadline:
             installation_log = serial_path.read_text(errors='replace')

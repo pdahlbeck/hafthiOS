@@ -619,6 +619,20 @@
         "The live trial session keeps its existing welcome screen.",
         "Password authentication is performed by greetd and the system PAM configuration."
       ]
+    },
+    {
+      "path": "scripts/vm-install.py",
+      "purpose": "Installs and validates Hafthi OS on the CI-created disposable VM disk.",
+      "when": "Run as root only from the separate temporary read-only test CD.",
+      "connections": [
+        "scripts/test-boot.py",
+        "live/usr/local/bin/hafthios-install"
+      ],
+      "details": [
+        "Requires the explicit --disposable-vm argument and uses the normal live installer with its disk confirmation checks.",
+        "Tests signed package transactions, installs to /dev/vda and reports progress over the VM serial console.",
+        "It is never embedded in the distributable ISO or attached to installed BIOS/UEFI boot tests."
+      ]
     }
   ]
 }
