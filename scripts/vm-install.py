@@ -12,13 +12,17 @@ def test_display():
     name, output = next((n, o) for n, o in outputs.items() if o.get('logical') and o.get('current_mode') is not None)
     mode = backend['mode_string'](output['modes'][output['current_mode']])
     scale = output['logical']['scale']
-    trial_mode = next((backend['mode_string'](m) for m in output['modes'] if backend['mode_string'](m) != mode), mode)
+    # A moderate advertised mode exercises resolution changes without selecting
+    # the first (5K ultrawide) EDID mode on a small CI virtual graphics device.
+    alternatives = [m for m in output['modes'] if backend['mode_string'](m) != mode
+                    and 1024 <= m['width'] <= 1920 and 720 <= m['height'] <= 1200]
+    trial_mode = backend['mode_string'](min(alternatives, key=lambda m: abs(m['width'] - 1920) + abs(m['height'] - 1080))) if alternatives else mode
     trial_scale = '1.25' if scale != 1.25 else '1'
     previous, watchdog = backend['trial_display'](name, trial_mode, trial_scale)
     time.sleep(2)
     active = backend['read_outputs']()[name]
-    assert backend['mode_string'](active['modes'][active['current_mode']]) == trial_mode
-    assert active['logical']['scale'] == float(trial_scale)
+    assert backend['mode_string'](active['modes'][active['current_mode']]) == trial_mode, (trial_mode, active)
+    assert active['logical']['scale'] == float(trial_scale), (trial_scale, active)
     # Do not confirm: the independent process must restore real output state.
     watchdog.wait(timeout=30)
     time.sleep(2)
@@ -53,6 +57,11 @@ def main():
         import pwd
         runtime = Path('/run/user') / str(pwd.getpwnam('hafthi').pw_uid)
         socket = next(runtime.glob('niri*.sock'))
+        # The root runner is entered through tty2. Niri relinquishes its DRM
+        # device on an inactive VT, so modesets must be tested back on tty1.
+        subprocess.run(['chvt', '1'], check=True, timeout=10)
+        import time
+        time.sleep(2)
         subprocess.run(['runuser', '-u', 'hafthi', '--', 'env', f'NIRI_SOCKET={socket}',
                         f'XDG_RUNTIME_DIR={runtime}', 'python3', str(Path(__file__).resolve()), '--display-test'],
                        check=True, timeout=90)
