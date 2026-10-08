@@ -58,6 +58,10 @@ the same scale. Occupation routes connect homes to woodcutting, hunting, animal
 feeding, construction, cargo loading, the boatyard and a glowing smithy. Ships
 moor for loading; shipwrights grow a hull and launch a new boat. Villagers return
 through their doorways after work. The scene fits each display without stretching.
+Shared workdays link timber deliveries to smithing, tool deliveries and shipwright
+work before a new hull launches. Visiting crew unloads at the market using carts,
+trades and returns aboard before their ship departs. CPU activity adds helpers
+while these handoffs retain their calm pace.
 Aggregate
 CPU activity adds workers, received network traffic adds trade, and a recognized
 CPU temperature sensor warms the light. VM temperature sensors may be unavailable.

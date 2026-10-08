@@ -9,6 +9,28 @@ world = runpy.run_path(str(ROOT / 'live/usr/local/bin/hafthios-world'))
 
 
 class VillageTests(unittest.TestCase):
+    def test_connected_deliveries_precede_smithing_shipwork_and_trade_departure(self):
+        actors=world['connected_actors']
+        self.assertEqual(actors(139)[0]['action'],'handoff')
+        self.assertEqual(actors(155)[1]['action'],'smith')
+        self.assertEqual(actors(240)[2]['action'],'tools')
+        self.assertEqual(actors(272)[2]['action'],'handoff')
+        self.assertEqual(actors(290)[3]['action'],'ship')
+        self.assertEqual(actors(415)[3]['action'],'talk')
+        # Trade crew unloads, visits the market and boards before the ship leaves.
+        self.assertEqual(actors(315)[4]['action'],'carry')
+        self.assertEqual(actors(340)[4]['action'],'trade')
+        self.assertEqual(actors(400)[4]['action'],'aboard')
+        self.assertFalse(world['voyage_state'](425)[1])
+        self.assertTrue(all(not a['visible'] for a in actors(425)[4:]))
+        import math
+        previous=actors(0)
+        for i in range(1,9601):
+            current=actors(i*.1)
+            for before,after in zip(previous,current):
+                self.assertLess(math.dist(before['position'],after['position']),2)
+            previous=current
+
     def test_ship_docks_for_loading_and_voyages_are_continuous(self):
         voyage = world['voyage_state']
         for t in (0, 30, 59, 300, 359, 360):

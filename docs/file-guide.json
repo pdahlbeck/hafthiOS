@@ -696,7 +696,8 @@
         "The panel stores enable, pause, economy and responsiveness preferences in ~/.config/hafthios/world.json. Village age is saved every 30 seconds in ~/.local/state/hafthios/world.json.",
         "Animation uses at most 12 frames per second, 8 under high load and 5 in economy mode or on low battery. Pause freezes village age and telemetry appearance; settings continue to be polled. Runtime status supports actual VM verification.",
         "The 2160×1350 scene uses uniform fitting on every display. Adults, doorways, longhouses and ships share scene units; ship scale excludes the original PNG margins and its hull is anchored at the waterline.",
-        "Continuous occupation routes lead from a house doorway to woodcutting, hunting, animal feeding, construction, shipbuilding, cargo work and smithing, then back indoors. Docked voyage intervals allow animated loading; the boatyard grows a hull and launches a new ship. A forge includes hearth glow, bellows and anvil work."
+        "Continuous occupation routes lead from a house doorway to woodcutting, hunting, animal feeding, construction, shipbuilding, cargo work and smithing, then back indoors. Docked voyage intervals allow animated loading; the boatyard grows a hull and launches a new ship. A forge includes hearth glow, bellows and anvil work.",
+        "Shared schedules connect a timber delivery to smithing, tool delivery and shipwright work. The hull gains planks after tools arrive and launches after the builders finish. A separate arrival clock brings two crew members over the gangplank, unloads cargo by cart at the market and boards them before departure. Helper counts still respond to CPU activity."
       ]
     },
     {
@@ -723,7 +724,8 @@
       "details": [
         "Synthetic proc/sys files verify smoothed CPU/network counters, loopback exclusion, CPU-only temperature readings, missing sensors and low battery.",
         "Checks preference validation and reduced frame cadence; the separate VM test exercises the actual GTK background and pause/resume behavior.",
-        "Checks continuous worker journeys into and out of homes and voyage continuity with real docking intervals for cargo work."
+        "Checks continuous worker journeys into and out of homes and voyage continuity with real docking intervals for cargo work.",
+        "Verifies handoff order, crew boarding before departure and position continuity across two full connected-work cycles."
       ]
     }
   ]

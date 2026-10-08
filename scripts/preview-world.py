@@ -32,6 +32,9 @@ for name, t, load, heat, network in [('village-start', 0, .12, None, 0),
                                     ('village-docked', 335, .35, None, .5),
                                     ('village-shipbuilding', 220, .5, None, 0),
                                     ('village-expanded', 2300, .3, None, 0),
+                                    ('village-forging', 155, .3, None, 0),
+                                    ('village-tool-delivery', 240, .3, None, 0),
+                                    ('village-trade', 340, .3, None, .5),
                                     ('village-busy', 900, .85, 85, .9)]:
     render(t, load, heat, network).write_to_png(str(out / (name + '.png')))
 a = Image.open(out / 'village.png').convert('RGB')
