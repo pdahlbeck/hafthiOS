@@ -283,9 +283,18 @@ with tempfile.TemporaryDirectory() as tmp:
             time.sleep(3)
         else:
             raise RuntimeError('Niri desktop and Hafthi window did not become ready')
-        time.sleep(5)
-        if 'HAFTHIOS_WORLD_READY' not in serial_path.read_text(errors='replace'):
-            raise RuntimeError('Living village background did not draw in Niri')
+        # The terminal can be ready before the background finishes loading the
+        # original raster ship, especially under x86 software emulation. Wait
+        # for evidence of an actual GTK draw rather than a fixed startup delay.
+        deadline = time.monotonic() + 90
+        while time.monotonic() < deadline:
+            if 'HAFTHIOS_WORLD_READY' in serial_path.read_text(errors='replace'):
+                break
+            if process.poll() is not None:
+                raise RuntimeError('VM exited before the village background drew')
+            time.sleep(1)
+        else:
+            raise RuntimeError('Living village background did not draw in Niri within 90 seconds')
         capture_screen(sock_path, out / 'desktop-screen.ppm')
         def wait_panel(hidden):
             deadline = time.monotonic() + 20
