@@ -96,11 +96,60 @@ def frame_interval(prefs, metrics):
     return 125 if metrics.load > .75 else 83
 
 
+# Scene units are shared: an adult is 22 high, a door 31 high,
+# a longhouse about 270 long and a trading ship 210 long (visible ink).
+WORLD_WIDTH, WORLD_HEIGHT = 2160, 1350
+HOUSES = [(820,810,1.4,0),(1240,765,1.5,0),(1660,840,1.45,0),
+          (900,960,1.3,240),(1840,970,1.4,1080),(1510,995,1.25,1800)]
+
+
+def voyage_state(t):
+    phase=t%360
+    if phase < 60 or phase >= 300:
+        return 0., True
+    if phase < 150:
+        f=(phase-60)/90
+    elif phase < 210:
+        f=1.
+    else:
+        f=1-(phase-210)/90
+    return f*f*(3-2*f), False
+
+
+def worker_state(t, index, home, destination, task):
+    """A continuous home -> path -> task -> path -> indoor cycle."""
+    points=[home,(home[0],home[1]+38),(destination[0],home[1]+38),destination]
+    distances=[math.dist(a,b) for a,b in zip(points,points[1:])]
+    travel=sum(distances)/13  # Same walking speed for every occupation.
+    work={'wood':60,'ship':80,'build':60,'smith':60,'hunt':40,'feed':30}.get(task,48)
+    period=16+2*travel+work
+    phase=(t+index*19)%period
+    if phase < 8 or phase >= period-8:
+        return {'visible':False,'position':home,'action':'indoors','phase':phase}
+    elapsed=phase-8
+    if elapsed < travel:
+        action='walk'
+        fraction=elapsed/travel
+    elif elapsed < travel+work:
+        return {'visible':True,'position':destination,'action':task,'phase':elapsed-travel}
+    else:
+        action='carry' if task in ('wood','load','feed','build','ship') else 'walk'
+        fraction=1-(elapsed-travel-work)/travel
+    distance=fraction*sum(distances)
+    for segment,(a,b,length) in enumerate(zip(points,points[1:],distances)):
+        if distance <= length or segment==len(distances)-1:
+            f=min(1,distance/length) if length else 0
+            return {'visible':True,'position':(a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f),
+                    'action':action,'phase':elapsed}
+        distance-=length
+    return {'visible':True,'position':home,'action':action,'phase':elapsed}
+
+
 class Village:
     def __init__(self, cairo):
         self.cairo = cairo
-        self.trees = [(random.Random(i).uniform(50, 470), random.Random(i + 80).uniform(435, 550),
-                       random.Random(i + 160).uniform(18, 38)) for i in range(26)]
+        self.trees = [(random.Random(i).uniform(70, 620), random.Random(i + 80).uniform(740, 930),
+                       random.Random(i + 160).uniform(30, 62)) for i in range(26)]
         path = Path(__file__).parents[2] / 'share/plymouth/themes/hafthios/ship.png'
         original = cairo.ImageSurface.create_from_png(str(path))
         self.ship = cairo.ImageSurface(cairo.FORMAT_ARGB32, original.get_width(), original.get_height())
@@ -109,10 +158,17 @@ class Village:
         ctx.paint()
         self.ship.flush()
         pixels = self.ship.get_data()
+        bounds=[original.get_width(),original.get_height(),0,0]
+        stride=self.ship.get_stride()
         for i in range(0, len(pixels), 4):
             alpha = max(0, min(255, (max(bytes(pixels[i:i + 3])) - 100) * 255 // 155))
             pixels[i:i + 4] = bytes((alpha, alpha, alpha, alpha))
+            if alpha > 30:
+                xx,yy=(i%stride)//4,i//stride
+                bounds=[min(bounds[0],xx),min(bounds[1],yy),max(bounds[2],xx),max(bounds[3],yy)]
         self.ship.mark_dirty()
+        self.ship_bounds=bounds
+        self.ship_ink_width=bounds[2]-bounds[0]+1
 
     def line(self, ctx, points, alpha=.24, width=1.1, warm=False):
         ctx.set_source_rgba(*((.80, .67, .48) if warm else (.63, .76, .74)), alpha)
@@ -179,8 +235,8 @@ class Village:
             c.set_line_width(2*size)
             c.stroke()
 
-    def person(self,c,x,y,t,index,carrying=False):
-        step=math.sin(t*2.5+index)*1.3
+    def person(self,c,x,y,t,index,carrying=False,action="walk"):
+        step=math.sin(t*2.5+index)*1.3 if action in ("walk","carry") else 0
         # Small clothed silhouettes: shoulders, wool tunic, belt and boots.
         tint=(.49,.59,.56) if index%3 else (.59,.56,.46)
         c.arc(x,y-19,2.8,0,math.tau)
@@ -212,111 +268,204 @@ class Village:
             c.line_to(x-2,y-5)
             c.set_source_rgba(.27,.36,.35,.85)
             c.fill()
-        if carrying:
+        if action in ('wood','build','ship','smith'):
+            swing=(math.sin(t*2.8+index)+1)/2
+            end=(x+14-3*swing,y-8-16*swing)
+            self.line(c,[(x+4,y-12),end],.64,1.4,warm=True)
+            if action=='wood':
+                self.line(c,[(end[0]-3,end[1]-2),(end[0]+3,end[1]+2)],.68,3)
+            else:
+                self.line(c,[(end[0]-3,end[1]),(end[0]+3,end[1])],.65,2.5)
+        elif action=='hunt':
+            c.move_to(x+10,y-19)
+            c.curve_to(x+20,y-12,x+20,y-8,x+10,y-2)
+            c.set_source_rgba(.70,.67,.52,.55)
+            c.set_line_width(1.1)
+            c.stroke()
+            self.line(c,[(x+10,y-19),(x+10,y-2)],.48)
+            self.line(c,[(x+4,y-12),(x+22,y-12)],.50)
+        elif action=='feed':
+            self.line(c,[(x+5,y-10),(x+11,y-4)],.62,2)
+            for i in range(4):
+                phase=(t/2+i/4)%1
+                c.arc(x+10+phase*8,y-4+phase*7,.7,0,math.tau)
+                c.set_source_rgba(.78,.66,.40,.45*(1-phase))
+                c.fill()
+        if carrying or action=='carry':
             c.rectangle(x+5,y-12,7,6)
             c.set_source_rgba(.36,.31,.23,.80)
             c.fill()
             self.line(c,[(x+5,y-12),(x+12,y-12),(x+12,y-6),(x+5,y-6),(x+5,y-12)],.43,.8,warm=True)
 
     def boat(self,c,x,y,size,t,alpha=.57):
+        # Anchor visible hull at the waterline, excluding the raster's margins.
+        left,top,right,bottom=self.ship_bounds
+        scale=size/self.ship_ink_width
         c.save()
-        c.translate(x,y+math.sin(t/3)*1.2)
-        c.scale(size/self.ship.get_width(),size/self.ship.get_width())
+        c.translate(x-size/2-left*scale,y-bottom*scale+math.sin(t/3)*1.2)
+        c.scale(scale,scale)
         c.set_source_surface(self.ship,0,0)
         c.paint_with_alpha(alpha)
         c.restore()
 
+    def animal(self,c,x,y,t,index,deer=False):
+        head=math.sin(t/7+index)*2
+        self.line(c,[(x-10,y-9),(x+8,y-9),(x+13,y-15+head),(x+19,y-14+head)],.46,1.6)
+        for dx in (-8,-3,5,9):
+            self.line(c,[(x+dx,y-8),(x+dx+math.sin(t+index+dx),y)],.38,1.4)
+        if deer:
+            self.line(c,[(x+14,y-15),(x+13,y-23),(x+9,y-26)],.39)
+            self.line(c,[(x+13,y-23),(x+18,y-26)],.39)
+        else:
+            self.line(c,[(x+13,y-15+head),(x+9,y-19+head)],.42)
+        self.line(c,[(x-10,y-9),(x-15,y-12)],.32)
+
     def draw(self,c,width,height,t,activity=.08,heat=None,network=0):
         c.save()
-        c.scale(width/1440,height/900)
-        # Most of the upper canvas stays quiet for readable terminal windows.
-        warmth = 0 if heat is None else max(0,min(1,(heat-55)/35))
-        sky = self.cairo.LinearGradient(0,0,0,900)
+        # Uniform scale prevents ultrawide/resolution changes stretching bodies.
+        scale=min(width/WORLD_WIDTH,height/WORLD_HEIGHT)
+        warmth=0 if heat is None else max(0,min(1,(heat-55)/35))
+        sky=self.cairo.LinearGradient(0,0,0,height)
         sky.add_color_stop_rgb(0,.045+.025*warmth,.070,.085)
         sky.add_color_stop_rgb(1,.095+.035*warmth,.145,.155)
         c.set_source(sky)
         c.paint()
+        c.translate((width-WORLD_WIDTH*scale)/2,height-WORLD_HEIGHT*scale)
+        c.scale(scale,scale)
         c.set_source_rgba(.55,.65,.58,.028)
-        c.arc(1125,280,43,0,math.tau)
+        c.arc(1710,420,58,0,math.tau)
         c.fill()
-        # Far coast, wooded headland, and the village's gently curving shore.
-        self.line(c,[(0,440),(155,432),(310,441),(480,430),(700,435),(1000,425),(1440,440)],.11)
-        coast=[(0,535),(140,546),(290,565),(455,608),(590,631),(760,608),(900,588),(1100,588),(1290,612),(1440,640)]
-        c.move_to(0,440)
-        c.line_to(1440,440)
-        for p in reversed(coast):
-            c.line_to(*p)
+        self.line(c,[(0,730),(350,716),(780,732),(1300,709),(1750,725),(2160,731)],.12)
+        coast=[(0,1040),(300,1060),(600,1100),(900,1070),(1200,1040),
+               (1400,1040),(1700,1130),(1900,1180),(2160,1140)]
+        c.move_to(0,730)
+        c.line_to(2160,730)
+        for point in reversed(coast):
+            c.line_to(*point)
         c.close_path()
         c.set_source_rgba(.16,.22,.21,.55)
         c.fill()
-        self.line(c,coast,.32,1.3)
-        for x,y,s in sorted(self.trees,key=lambda v:v[1]):
-            self.line(c,[(x,y),(x,y-s*1.4)],.20)
-            self.line(c,[(x-s*.45,y-s*.3),(x,y-s*1.6),(x+s*.45,y-s*.3)],.18)
-            self.line(c,[(x-s*.55,y-s*.1),(x,y-s*1.1),(x+s*.55,y-s*.1)],.15)
-        # Village grows gradually; houses never disappear at a film-loop seam.
-        sites=[(790,505,.80,0),(990,489,.74,0),(1140,540,.92,0),
-               (865,562,.64,240),(1265,563,.74,660),(1050,553,.60,1080)]
-        for x,y,size,start in sites:
-            progress = 1 if start == 0 else max(0,min(1,(t-start)/300))
-            if progress > 0:
+        self.line(c,coast,.32,1.4)
+        for x,y,size in sorted(self.trees,key=lambda v:v[1]):
+            self.line(c,[(x,y),(x,y-size*1.4)],.20)
+            self.line(c,[(x-size*.45,y-size*.3),(x,y-size*1.6),(x+size*.45,y-size*.3)],.18)
+            self.line(c,[(x-size*.55,y-size*.1),(x,y-size*1.1),(x+size*.55,y-size*.1)],.15)
+        for x,y,size,start in HOUSES:
+            progress=1 if start==0 else max(0,min(1,(t-start)/600))
+            if progress>0:
                 self.house(c,x,y,size,progress,t,activity)
-        self.line(c,[(715,565),(852,535),(975,520),(1090,546),(1230,580)],.09)
-        # Market stalls and quiet piles of wood near the shore.
-        for x in (726,758):
-            self.line(c,[(x,584),(x,562),(x+24,562),(x+24,584)],.26)
-            self.line(c,[(x-4,561),(x+12,551),(x+28,561)],.32)
-        for k in range(5):
-            self.line(c,[(1160+k*4,586-k*2),(1190+k*4,586-k*2)],.22)
-        # Jetty extends into the bay.
-        self.line(c,[(937,592),(901,674),(925,679),(962,593)],.32)
-        for i in range(8):
-            f=i/8
-            self.line(c,[(937-36*f,592+82*f),(962-37*f,593+86*f)],.21)
-        for x,y in ((909,660),(930,662),(922,631),(943,634)):
-            self.line(c,[(x,y+9),(x,y-5)],.30)
-        # Slow, non-synchronised wave fronts fade before reaching the shore.
+        # Footpaths connect doors, work sites and the quay.
+        for x,y,size,start in HOUSES[:3]:
+            self.line(c,[(x-25*size,y),(x-25*size,y+38),(1340,y+38),(1380,1040)],.08)
+        for x in (1220,1290):
+            self.line(c,[(x,1020),(x,992),(x+45,992),(x+45,1020)],.29)
+            self.line(c,[(x-5,991),(x+22,976),(x+50,991)],.34)
+        # Open smithy: a sheltered hearth, bellows and an anvil beside the yard.
+        self.line(c,[(1095,945),(1095,896),(1250,896),(1250,945)],.32,1.7)
+        self.line(c,[(1082,897),(1118,854),(1235,854),(1267,897),(1082,897)],.40)
+        self.line(c,[(1215,880),(1215,832),(1230,832),(1230,881)],.27)
+        self.line(c,[(1196,927),(1196,910),(1234,910),(1234,927),(1196,927)],.40)
+        for i in range(4):
+            glow=.20+.10*math.sin(t*2+i)
+            c.set_source_rgba(.95,.47,.17,glow)
+            c.arc(1205+i*6,914,2.5+math.sin(t*3+i)*.5,0,math.tau)
+            c.fill()
+        self.line(c,[(1158,927),(1165,922),(1187,922),(1194,927),(1180,929),
+                     (1180,940),(1168,940),(1168,929),(1158,927)],.54,1.5)
+        bellows=math.sin(t*1.5)*3
+        self.line(c,[(1235,916),(1253,912-bellows),(1253,923),(1235,918)],.35,warm=True)
+        for i in range(3):
+            phase=(t/12+i/3)%1
+            self.line(c,[(1221,831-40*phase),(1224+8*phase,820-40*phase)],.09*(1-phase),2)
+        # Woodcutting stump and stacked timber; nearby shipwright's slipway.
+        self.line(c,[(402,863),(402,850),(420,850),(420,863)],.43)
+        for k in range(7):
+            self.line(c,[(575+k*3,938-k*3),(635+k*3,938-k*3)],.30,2,warm=True)
+        self.line(c,[(450,1050),(710,1050)],.28,2)
+        self.line(c,[(470,1061),(695,1061)],.24,2)
+        ship_phase=(t%480)/480
+        if ship_phase<.8:
+            progress=ship_phase/.8
+            self.line(c,[(465,1039),(505,1051),(665,1051),(708,1028)],.42,2)
+            for i in range(10):
+                xx=490+i*21
+                self.line(c,[(xx-8,1047),(xx,1012),(xx+8,1047)],.30)
+            for j in range(int(progress*7)):
+                self.line(c,[(480,1044-j*4),(685,1044-j*4)],.36,1.5,warm=True)
+            if progress>.7:
+                self.line(c,[(585,1045),(585,974)],.40,2)
+        else:
+            f=(ship_phase-.8)/.2
+            self.boat(c,590-230*f,1080+170*f,210,t,.55*(1-f))
+        # Animal pen, trough and goats; herd stays on land.
+        self.line(c,[(1735,1040),(1900,1040),(1925,1110),(1755,1110),(1735,1040)],.22)
+        for x in range(1750,1910,25):
+            self.line(c,[(x,1045),(x,1029)],.25)
+        self.line(c,[(1762,1066),(1797,1066),(1793,1075),(1766,1075),(1762,1066)],.38,warm=True)
+        for i in range(4):
+            self.animal(c,1800+i*25+math.sin(t/27+i)*8,1084+i%2*12,t,i)
+        # Docked ship has a real mooring interval for cargo handling.
+        self.line(c,[(1380,1038),(1350,1200),(1390,1202),(1418,1040)],.34)
+        for i in range(13):
+            f=i/13
+            self.line(c,[(1380-30*f,1038+162*f),(1418-28*f,1040+162*f)],.23)
         for i in range(12):
-            phase=(t/28+i/12)%1
-            y=632+phase*268
-            c.move_to(0,y)
-            c.curve_to(410,y-5,850,y+5,1440,y-2)
+            phase=(t/34+i/12)%1
+            yy=1170+phase*180
+            c.move_to(0,yy)
+            c.curve_to(700,yy-7,1450,yy+6,2160,yy-2)
             c.set_source_rgba(.60,.76,.75,.10*math.sin(math.pi*phase)**2)
             c.set_line_width(1)
             c.stroke()
-        # A voyage leaves the jetty, visits the horizon and returns to trade.
-        voyage=t/210
-        cycle=int(voyage)
-        phase=voyage%1
-        destination=100+random.Random(cycle+42).random()*230
-        travel=math.sin(math.pi*max(0,min(1,(phase-.12)/.76)))**2 if .12 < phase < .88 else 0
-        self.boat(c,850+(destination-850)*travel,653-116*travel,105-30*travel,t)
-        if network > .15:
-            self.boat(c,360+100*math.sin(t/90),600,61,t+8,.20+.20*network)
-        # Fisher with a rod; tiny fishing skiff and seasonal gulls.
-        self.person(c,918,656,t,0)
-        rod=math.sin(t/7)*3
-        self.line(c,[(922,648),(947,623+rod),(960,675)],.22)
-        self.boat(c,510+45*math.sin(t/70),701,48,t,.36)
-        workers=3+int(max(0,min(1,activity))*9)
-        for i in range(workers):
-            rng=random.Random(200+i)
-            duration=35+rng.random()*45
-            f=(t/duration+rng.random())%2
-            f=f if f<1 else 2-f
-            start=(720+rng.random()*480,530+rng.random()*57)
-            end=(915,599) if i%3==0 else (725+rng.random()*500,540+rng.random()*50)
-            self.person(c,start[0]+(end[0]-start[0])*f,start[1]+(end[1]-start[1])*f,t,i,i%3==0)
-        # A hunter follows the tree line; a deer occasionally crosses a clearing.
-        self.person(c,290+135*math.sin(t/110),561,t,20)
-        deer=210+50*math.sin(t/180)
-        self.line(c,[(deer-7,531),(deer+6,531),(deer+10,525),(deer+12,525)],.21)
-        self.line(c,[(deer-5,531),(deer-6,539)],.21)
-        self.line(c,[(deer+5,531),(deer+6,539)],.21)
+        travel,docked=voyage_state(t)
+        self.boat(c,1240-730*travel,1190+90*travel,210-35*travel,t,.62)
+        # Secondary trader follows a different route; traffic increases its light.
+        other,_=voyage_state(t+170)
+        self.boat(c,1530+430*other,1250+55*other,180-25*other,t+8,.24+.20*network)
+        if docked:
+            for i in range(3):
+                self.line(c,[(1370,1170-i*7),(1382,1170-i*7),(1382,1177-i*7)],.42,warm=True)
+            self.person(c,1373,1180,t,17,carrying=True,action='load')
+            lift=(t%6)/6
+            c.rectangle(1370-42*lift,1168-10*math.sin(math.pi*lift),7,6)
+            c.set_source_rgba(.61,.51,.34,.56)
+            c.fill()
+        # Fish from the quay and a small open rowing boat at consistent scale.
+        self.person(c,1397,1145,t,0,action='fish')
+        self.line(c,[(1403,1137),(1434,1101+math.sin(t/7)*3),(1453,1193)],.29)
+        skiff=800+60*math.sin(t/100)
+        self.line(c,[(skiff-28,1280),(skiff-16,1292),(skiff+18,1292),(skiff+30,1280)],.40,1.5)
+        self.person(c,skiff,1284,t,2,action='fish')
+        self.line(c,[(skiff+4,1270),(skiff+42,1300)],.32)
+        active_site=next(((x,y,size) for x,y,size,start in HOUSES if start>0 and start<t<start+600),HOUSES[-1][:3])
+        jobs=[('wood',(395,860)),('hunt',(330,795)),('feed',(1762,1070)),
+              ('ship',(590,1040)),('build',(active_site[0]+65,active_site[1]+8)),
+              ('smith',(1158,931)),('load',(1370,1168) if docked else (1280,1024)),
+              ('wood',(425,875)),('ship',(650,1040)),('feed',(1785,1070)),
+              ('load',(1378,1130) if docked else (1310,1024)),('build',(active_site[0]-60,active_site[1]+8))]
+        # Seven core occupations, including the smith; load adds helpers.
+        workers=7+int(max(0,min(1,activity))*5)
+        states=[]
+        for i,(task,destination) in enumerate(jobs[:workers]):
+            hx,hy,hs,_=HOUSES[i%3]
+            state=worker_state(t,i,(hx-25*hs,hy-3),destination,task)
+            if state['visible']:
+                states.append((state['position'][1],i,state))
+        for _,i,state in sorted(states):
+            x,y=state['position']
+            action=state['action']
+            if action=='load':
+                action='carry'
+            self.person(c,x,y,t,i+3,action=action)
+            if state['action']=='hunt' and state['phase']%8<1.8:
+                f=(state['phase']%8)/1.8
+                self.line(c,[(x+22+95*f,y-12-12*math.sin(math.pi*f)),
+                             (x+32+95*f,y-12-12*math.sin(math.pi*f))],.37)
+        self.animal(c,455+35*math.sin(t/70),801,t,12,deer=True)
         for i in range(4):
-            x=650+i*80+math.sin(t/50+i)*55
-            y=330+math.sin(t/17+i)*7
-            self.line(c,[(x-6,y+2),(x-2,y-1),(x,y+1),(x+2,y-1),(x+6,y+2)],.23)
+            x=1000+i*95+math.sin(t/50+i)*65
+            yy=540+math.sin(t/17+i)*9
+            self.line(c,[(x-7,yy+2),(x-2,yy-1),(x,yy+1),(x+2,yy-1),(x+7,yy+2)],.23)
         c.restore()
 
 

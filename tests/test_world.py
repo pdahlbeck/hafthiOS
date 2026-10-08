@@ -9,6 +9,35 @@ world = runpy.run_path(str(ROOT / 'live/usr/local/bin/hafthios-world'))
 
 
 class VillageTests(unittest.TestCase):
+    def test_ship_docks_for_loading_and_voyages_are_continuous(self):
+        voyage = world['voyage_state']
+        for t in (0, 30, 59, 300, 359, 360):
+            self.assertEqual(voyage(t), (0., True))
+        for t in (90, 180, 250):
+            distance, docked = voyage(t)
+            self.assertFalse(docked)
+            self.assertTrue(0 < distance <= 1)
+        for boundary in (60,150,210,300,360):
+            self.assertAlmostEqual(voyage(boundary-.001)[0], voyage(boundary+.001)[0], places=5)
+
+    def test_occupations_reach_workplace_and_return_indoors_without_teleporting(self):
+        state = world['worker_state']
+        home, destination = (800,800), (1100,1000)
+        previous = None
+        actions = set()
+        for i in range(2200):
+            current = state(i*.1,0,home,destination,'smith')
+            actions.add(current['action'])
+            if current['action'] == 'smith':
+                self.assertEqual(current['position'], destination)
+            if not current['visible']:
+                self.assertEqual(current['position'], home)
+            if previous:
+                import math
+                self.assertLessEqual(math.dist(previous['position'],current['position']),1.31)
+            previous=current
+        self.assertTrue({'indoors','walk','smith'} <= actions)
+
     def test_missing_sensors_are_unknown_and_pause_saves_energy(self):
         with tempfile.TemporaryDirectory() as tmp:
             metrics = world['Telemetry'](Path(tmp), Path(tmp))

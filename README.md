@@ -52,7 +52,13 @@ Output is in `out/`. The script copies Archiso's baseline profile into a tempora
 
 The desktop now includes a **Living village** background, controlled from the
 right-hand Hafþi panel. The original ship travels from a growing coastal village;
-villagers trade, fish and work while slow waves move across the bay. Aggregate
+villagers trade, fish and work while slow waves move across the bay.
+The wider landscape keeps people, doors, longhouses and visible ship hulls in
+the same scale. Occupation routes connect homes to woodcutting, hunting, animal
+feeding, construction, cargo loading, the boatyard and a glowing smithy. Ships
+moor for loading; shipwrights grow a hull and launch a new boat. Villagers return
+through their doorways after work. The scene fits each display without stretching.
+Aggregate
 CPU activity adds workers, received network traffic adds trade, and a recognized
 CPU temperature sensor warms the light. VM temperature sensors may be unavailable.
 Pause freezes the scene; **Save energy** reduces drawing to five frames per second.

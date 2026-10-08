@@ -12,6 +12,7 @@ except ImportError:
 root = Path(__file__).resolve().parents[1]
 world = runpy.run_path(str(root / 'live/usr/local/bin/hafthios-world'))
 village = world['Village'](cairo)
+assert 0 < village.ship_ink_width < village.ship.get_width() * .7, 'Ship margins were included in its scale'
 out = root / 'out'
 out.mkdir(exist_ok=True)
 
@@ -28,6 +29,9 @@ for name, t, load, heat, network in [('village-start', 0, .12, None, 0),
                                     ('village', 900, .12, None, 0),
                                     ('village-moving', 905, .12, None, 0),
                                     ('village-paused', 900, .12, None, 0),
+                                    ('village-docked', 335, .35, None, .5),
+                                    ('village-shipbuilding', 220, .5, None, 0),
+                                    ('village-expanded', 2300, .3, None, 0),
                                     ('village-busy', 900, .85, 85, .9)]:
     render(t, load, heat, network).write_to_png(str(out / (name + '.png')))
 a = Image.open(out / 'village.png').convert('RGB')
