@@ -37,11 +37,13 @@ def screen_label_present(text, label):
         all(matches(a, b) for a, b in zip(actual[i:i + len(expected)], expected))
         for i in range(len(actual) - len(expected) + 1))
 
-def window_present(text, app_id):
+def window_present(text, app_id, focused=False):
     for line in reversed(text.splitlines()):
         if line.startswith('HAFTHIOS_DESKTOP_READY '):
             try:
-                return any(w.get('app_id', '').lower() == app_id for w in json.loads(line.split(' ', 1)[1]))
+                return any(w.get('app_id', '').lower() == app_id and
+                           (not focused or w.get('is_focused') is True)
+                           for w in json.loads(line.split(' ', 1)[1]))
             except (ValueError, AttributeError):
                 continue
     return False
@@ -323,8 +325,18 @@ with tempfile.TemporaryDirectory() as tmp:
         else:
             raise RuntimeError('Display page did not open')
         capture_screen(sock_path, out / 'display-settings.ppm')
+        # A layer-shell panel can retain keyboard focus even when Niri opens
+        # a new window. Unmap it before pressing Chrome's download button.
+        qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'meta_l'}, {'type': 'qcode', 'data': 'spc'}]})
+        wait_panel(True)
         qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'meta_l'}, {'type': 'qcode', 'data': 'b'}]})
-        time.sleep(10)
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            if window_present(serial_path.read_text(errors='replace'), 'org.hafthios.chromesetup', focused=True):
+                break
+            time.sleep(1)
+        else:
+            raise RuntimeError('Chrome download dialog did not receive keyboard focus')
         qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'ret'}]})
         deadline = time.monotonic() + 240
         while time.monotonic() < deadline:

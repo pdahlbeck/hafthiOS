@@ -16,6 +16,19 @@ Client = runpy.run_path(str(SOURCE))['Client']
 
 
 class GreeterTests(unittest.TestCase):
+    def test_vm_keypress_requires_current_window_focus(self):
+        tree = ast.parse((ROOT / 'scripts/test-boot.py').read_text())
+        function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'window_present')
+        namespace = {'json': json}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), '<window focus>', 'exec'), namespace)
+        present = namespace['window_present']
+        def report(focused):
+            return 'HAFTHIOS_DESKTOP_READY ' + json.dumps([{'app_id': 'org.hafthios.ChromeSetup', 'is_focused': focused}])
+        self.assertTrue(present(report(False), 'org.hafthios.chromesetup'))
+        self.assertFalse(present(report(False), 'org.hafthios.chromesetup', focused=True))
+        self.assertTrue(present(report(True), 'org.hafthios.chromesetup', focused=True))
+        self.assertFalse(present(report(True) + '\n' + report(False), 'org.hafthios.chromesetup', focused=True))
+
     def test_ocr_prompt_tolerates_one_glyph_error_but_rejects_other_states(self):
         tree = ast.parse((ROOT / 'scripts/test-boot.py').read_text())
         functions = [n for n in tree.body if isinstance(n, ast.FunctionDef)
