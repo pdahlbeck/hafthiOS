@@ -123,33 +123,56 @@ class Village:
         ctx.stroke()
 
     def house(self, c, x, y, size, progress, t, activity):
-        w, h = 100 * size, 46 * size
-        outline = [(x-w/2, y), (x-w/2, y-h), (x, y-h-30*size), (x+w/2, y-h), (x+w/2, y), (x-w/2, y)]
+        # Long side view with a deep pitched roof and a small visible gable.
+        w, h, pitch = 180 * size, 25 * size, 37 * size
+        left, right = x - w / 2, x + w / 2
+        wall = [(left,y), (left,y-h), (right,y-h-9*size),
+                (right,y-9*size), (left,y)]
+        roof = [(left-9*size,y-h+3*size), (left+22*size,y-h-pitch),
+                (right+16*size,y-h-pitch-9*size),
+                (right+40*size,y-h-6*size), (left-9*size,y-h+3*size)]
+        ridge = roof[1:3]
         if progress < 1:
-            for dx in (-.5, -.25, 0, .25, .5):
-                self.line(c, [(x+w*dx,y), (x+w*dx,y-h*min(1,progress*2))], .21)
+            for f in (0,.2,.4,.6,.8,1):
+                xx=left+w*f
+                self.line(c,[(xx,y-9*size*f),
+                             (xx,y-9*size*f-h*min(1,progress*2))],.27)
             if progress > .45:
-                self.line(c, outline[1:5], .12 + .15*progress)
-            self.line(c, [(x-w*.65,y+5),(x-w*.35,y+8)], .28)
+                self.line(c,roof,.12+.17*progress)
+                self.line(c,[(left+22*size,y-h-pitch),(left+22*size,y)],.20)
+            self.line(c,[(left-15*size,y+5*size),(left+20*size,y+8*size)],.28)
             return
-        c.move_to(*outline[0])
-        for p in outline[1:]:
-            c.line_to(*p)
-        c.set_source_rgba(.14,.20,.20,.60)
-        c.fill()
-        self.line(c, outline, .33)
-        self.line(c, [(x-w*.62,y-h+7*size),(x,y-h-35*size),(x+w*.62,y-h+7*size)], .40)
-        for dx in (-.3,-.1,.1,.3):
-            self.line(c, [(x+w*dx,y),(x+w*dx,y-h+3*size)], .10)
-        self.line(c, [(x-9*size,y),(x-9*size,y-26*size),(x+9*size,y-26*size),(x+9*size,y)], .30)
-        c.rectangle(x+w*.26,y-h*.65,10*size,9*size)
-        c.set_source_rgba(.87,.68,.40,.17+.10*activity)
-        c.fill()
-        self.line(c, [(x+w*.26,y-h-12*size),(x+w*.26,y-h-30*size),(x+w*.33,y-h-30*size),(x+w*.33,y-h-9*size)], .24)
+        for points, color in [(wall,(.14,.20,.20,.80)),(roof,(.21,.25,.22,.78))]:
+            c.move_to(*points[0])
+            for point in points[1:]:
+                c.line_to(*point)
+            c.set_source_rgba(*color)
+            c.fill()
+            self.line(c,points,.37)
+        self.line(c,ridge,.48,1.4)
+        # Fine thatch strokes follow the roof slope, without bright patterning.
+        for i in range(19):
+            f=i/18
+            self.line(c,[(left+22*size+(w-6*size)*f,y-h-pitch-9*size*f+3*size),
+                         (left-6*size+(w+46*size)*f,y-h+1*size-9*size*f)],.13,.8,warm=True)
+        self.line(c,[(right,y-9*size),(right+31*size,y-14*size),
+                     (right+31*size,y-h-9*size),(right+16*size,y-h-pitch-9*size)],.28)
+        for i in range(10):
+            f=i/9
+            self.line(c,[(left+w*f,y-9*size*f),
+                         (left+w*f,y-h-9*size*f)],.14)
+        door=x-32*size
+        self.line(c,[(door,y-3*size),(door,y-24*size),
+                     (door+14*size,y-25*size),(door+14*size,y-4*size)],.40)
+        for xx in (x+18*size,x+57*size):
+            c.rectangle(xx,y-h+7*size,8*size,4*size)
+            c.set_source_rgba(.87,.68,.40,.21+.10*activity)
+            c.fill()
+        # Hearth smoke rises through a subtle roof opening.
         for puff in range(3):
-            phase = (t/18 + puff/3) % 1
-            xx = x+w*.29+math.sin(t/16+puff)*phase*13
-            yy = y-h-33*size-phase*48
+            phase=(t/18+puff/3)%1
+            xx=x+math.sin(t/16+puff)*phase*13
+            yy=y-h-pitch-5*size-phase*48
             c.move_to(xx,yy)
             c.curve_to(xx-8,yy-5,xx+12,yy-13,xx+3,yy-22)
             c.set_source_rgba(.67,.75,.72,(1-phase)*(.08+.04*activity))
@@ -157,15 +180,43 @@ class Village:
             c.stroke()
 
     def person(self,c,x,y,t,index,carrying=False):
-        step = math.sin(t*2.5+index)*2
-        c.arc(x,y-12,2.2,0,math.tau)
-        c.set_source_rgba(.75,.80,.73,.48)
+        step=math.sin(t*2.5+index)*1.3
+        # Small clothed silhouettes: shoulders, wool tunic, belt and boots.
+        tint=(.49,.59,.56) if index%3 else (.59,.56,.46)
+        c.arc(x,y-19,2.8,0,math.tau)
+        c.set_source_rgba(.76,.72,.62,.66)
         c.fill()
-        self.line(c,[(x,y-9),(x,y-3),(x-3-step,y)],.42)
-        self.line(c,[(x,y-3),(x+3+step,y)],.42)
-        self.line(c,[(x-4,y-6),(x,y-8),(x+4,y-5)],.37)
+        c.move_to(x-3,y-16)
+        c.line_to(x+3,y-16)
+        c.line_to(x+4.5,y-5)
+        c.line_to(x-4.5,y-5)
+        c.close_path()
+        c.set_source_rgba(*tint,.82)
+        c.fill()
+        self.line(c,[(x-3,y-15),(x+3,y-15),(x+4.5,y-5),(x-4.5,y-5),(x-3,y-15)],.30,.8)
+        self.line(c,[(x-3.5,y-9),(x+3.5,y-9)],.46,.9,warm=True)
+        self.line(c,[(x-2,y-5),(x-2-step,y-1),(x-4-step,y)],.52,1.9)
+        self.line(c,[(x+2,y-5),(x+2+step,y-1),(x+4+step,y)],.52,1.9)
+        self.line(c,[(x-3,y-14),(x-5,y-10),(x-4,y-8)],.49,1.7)
+        self.line(c,[(x+3,y-14),(x+5,y-10),(x+6,y-8)],.49,1.7)
+        # Hair, occasional short beard and a draped cloak keep them individual.
+        c.arc(x,y-19.8,2.9,math.pi,math.tau)
+        c.set_source_rgba(.22,.26,.23,.90)
+        c.set_line_width(1.8)
+        c.stroke()
+        if index%2:
+            self.line(c,[(x-1.6,y-17),(x,y-15.5),(x+1.6,y-17)],.45,1.5,warm=True)
+        if index%4==0:
+            c.move_to(x-3,y-16)
+            c.line_to(x-6,y-6)
+            c.line_to(x-2,y-5)
+            c.set_source_rgba(.27,.36,.35,.85)
+            c.fill()
         if carrying:
-            self.line(c,[(x+4,y-9),(x+10,y-9),(x+10,y-3),(x+4,y-3),(x+4,y-9)],.45,warm=True)
+            c.rectangle(x+5,y-12,7,6)
+            c.set_source_rgba(.36,.31,.23,.80)
+            c.fill()
+            self.line(c,[(x+5,y-12),(x+12,y-12),(x+12,y-6),(x+5,y-6),(x+5,y-12)],.43,.8,warm=True)
 
     def boat(self,c,x,y,size,t,alpha=.57):
         c.save()
