@@ -284,6 +284,8 @@ with tempfile.TemporaryDirectory() as tmp:
         else:
             raise RuntimeError('Niri desktop and Hafthi window did not become ready')
         time.sleep(5)
+        if 'HAFTHIOS_WORLD_READY' not in serial_path.read_text(errors='replace'):
+            raise RuntimeError('Living village background did not draw in Niri')
         capture_screen(sock_path, out / 'desktop-screen.ppm')
         def wait_panel(hidden):
             deadline = time.monotonic() + 20
@@ -447,7 +449,7 @@ with tempfile.TemporaryDirectory() as tmp:
             deadline = time.monotonic() + 240
             while time.monotonic() < deadline:
                 text = serial_path.read_text(errors='replace') if serial_path.exists() else ''
-                if 'HAFTHIOS_INSTALLED_READY ' in text and window_present(text, 'se.dahlbeck.hafthi'):
+                if 'HAFTHIOS_INSTALLED_READY ' in text and 'HAFTHIOS_WORLD_READY' in text and window_present(text, 'se.dahlbeck.hafthi'):
                     break
                 if process.poll() is not None:
                     raise RuntimeError('Installed VM exited before the desktop')

@@ -32,6 +32,7 @@ file_permissions+=(
   ["/etc/sudoers.d/hafthios-live"]="0:0:440"
   ["/usr/local/bin/hafthios-session"]="0:0:755"
   ["/usr/local/bin/hafthios-welcome"]="0:0:755"
+  ["/usr/local/bin/hafthios-world"]="0:0:755"
 )
 PROFILE
 cat > "$profile/packages.x86_64" <<'PACKAGES'

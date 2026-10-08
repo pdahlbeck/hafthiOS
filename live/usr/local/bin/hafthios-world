@@ -1,0 +1,404 @@
+#!/usr/bin/env python3
+"""A quiet, procedural coastal village, drawn behind the desktop windows."""
+import argparse
+import json
+import math
+import os
+from pathlib import Path
+import random
+import sys
+import time
+
+DEFAULT = {'enabled': True, 'paused': False, 'economy': False, 'responsive': True}
+
+
+def preferences(home=None):
+    try:
+        value = json.loads(((home or Path.home()) / '.config/hafthios/world.json').read_text())
+        return {key: value.get(key) if type(value.get(key)) is bool else default
+                for key, default in DEFAULT.items()}
+    except (OSError, ValueError, AttributeError):
+        return DEFAULT.copy()
+
+
+def save_preferences(value, home=None):
+    import runpy
+    if set(value) != set(DEFAULT) or any(type(v) is not bool for v in value.values()):
+        raise ValueError('Invalid village preferences')
+    backend = runpy.run_path(str(Path(__file__).with_name('hafthios-settings')))
+    backend['atomic_write']((home or Path.home()) / '.config/hafthios/world.json', json.dumps(value) + '\n')
+
+
+class Telemetry:
+    """Read aggregate counters only. Missing VM sensors remain unknown."""
+    def __init__(self, proc=Path('/proc'), system=Path('/sys')):
+        self.proc, self.system = proc, system
+        self.previous_cpu = self.previous_net = None
+        self.load, self.network, self.temperature = .08, 0., None
+        self.battery_low = False
+
+    def sample(self, now):
+        try:
+            fields = (self.proc / 'stat').read_text().splitlines()[0].split()
+            counters = [int(x) for x in fields[1:9]]  # Guest time is already in user/nice.
+            total, idle = sum(counters), counters[3] + counters[4]
+            if self.previous_cpu:
+                delta = total - self.previous_cpu[0]
+                if delta > 0:
+                    busy = 1 - (idle - self.previous_cpu[1]) / delta
+                    self.load += (max(0., min(1., busy)) - self.load) * .18
+            self.previous_cpu = total, idle
+        except (OSError, ValueError, IndexError):
+            pass
+        try:
+            received = 0
+            for line in (self.proc / 'net/dev').read_text().splitlines()[2:]:
+                name, data = line.split(':', 1)
+                if name.strip() != 'lo':
+                    received += int(data.split()[0])
+            if self.previous_net and now > self.previous_net[1]:
+                rate = max(0, received - self.previous_net[0]) / (now - self.previous_net[1])
+                self.network += (min(1., rate / 2_000_000) - self.network) * .20
+            self.previous_net = received, now
+        except (OSError, ValueError, IndexError):
+            pass
+        temperatures = []
+        for hwmon in (self.system / 'class/hwmon').glob('hwmon*'):
+            try:
+                chip = (hwmon / 'name').read_text().strip().lower()
+            except OSError:
+                continue
+            if chip not in ('coretemp', 'k10temp', 'zenpower', 'cpu_thermal'):
+                continue
+            for sensor in hwmon.glob('temp*_input'):
+                try:
+                    value = int(sensor.read_text()) / 1000
+                    if 0 < value < 125:
+                        temperatures.append(value)
+                except (OSError, ValueError):
+                    pass
+        self.temperature = max(temperatures) if temperatures else None
+        self.battery_low = False
+        for supply in (self.system / 'class/power_supply').glob('*'):
+            try:
+                if (supply / 'type').read_text().strip() == 'Battery':
+                    self.battery_low |= ((supply / 'status').read_text().strip() == 'Discharging'
+                                         and int((supply / 'capacity').read_text()) <= 20)
+            except (OSError, ValueError):
+                pass
+
+
+def frame_interval(prefs, metrics):
+    if not prefs['enabled'] or prefs['paused']:
+        return 1000
+    if prefs['economy'] or metrics.battery_low:
+        return 200
+    return 125 if metrics.load > .75 else 83
+
+
+class Village:
+    def __init__(self, cairo):
+        self.cairo = cairo
+        self.trees = [(random.Random(i).uniform(50, 470), random.Random(i + 80).uniform(435, 550),
+                       random.Random(i + 160).uniform(18, 38)) for i in range(26)]
+        path = Path(__file__).parents[2] / 'share/plymouth/themes/hafthios/ship.png'
+        original = cairo.ImageSurface.create_from_png(str(path))
+        self.ship = cairo.ImageSurface(cairo.FORMAT_ARGB32, original.get_width(), original.get_height())
+        ctx = cairo.Context(self.ship)
+        ctx.set_source_surface(original, 0, 0)
+        ctx.paint()
+        self.ship.flush()
+        pixels = self.ship.get_data()
+        for i in range(0, len(pixels), 4):
+            alpha = max(0, min(255, (max(bytes(pixels[i:i + 3])) - 100) * 255 // 155))
+            pixels[i:i + 4] = bytes((alpha, alpha, alpha, alpha))
+        self.ship.mark_dirty()
+
+    def line(self, ctx, points, alpha=.24, width=1.1, warm=False):
+        ctx.set_source_rgba(*((.80, .67, .48) if warm else (.63, .76, .74)), alpha)
+        ctx.set_line_width(width)
+        ctx.move_to(*points[0])
+        for point in points[1:]:
+            ctx.line_to(*point)
+        ctx.stroke()
+
+    def house(self, c, x, y, size, progress, t, activity):
+        w, h = 100 * size, 46 * size
+        outline = [(x-w/2, y), (x-w/2, y-h), (x, y-h-30*size), (x+w/2, y-h), (x+w/2, y), (x-w/2, y)]
+        if progress < 1:
+            for dx in (-.5, -.25, 0, .25, .5):
+                self.line(c, [(x+w*dx,y), (x+w*dx,y-h*min(1,progress*2))], .21)
+            if progress > .45:
+                self.line(c, outline[1:5], .12 + .15*progress)
+            self.line(c, [(x-w*.65,y+5),(x-w*.35,y+8)], .28)
+            return
+        c.move_to(*outline[0])
+        for p in outline[1:]:
+            c.line_to(*p)
+        c.set_source_rgba(.14,.20,.20,.60)
+        c.fill()
+        self.line(c, outline, .33)
+        self.line(c, [(x-w*.62,y-h+7*size),(x,y-h-35*size),(x+w*.62,y-h+7*size)], .40)
+        for dx in (-.3,-.1,.1,.3):
+            self.line(c, [(x+w*dx,y),(x+w*dx,y-h+3*size)], .10)
+        self.line(c, [(x-9*size,y),(x-9*size,y-26*size),(x+9*size,y-26*size),(x+9*size,y)], .30)
+        c.rectangle(x+w*.26,y-h*.65,10*size,9*size)
+        c.set_source_rgba(.87,.68,.40,.17+.10*activity)
+        c.fill()
+        self.line(c, [(x+w*.26,y-h-12*size),(x+w*.26,y-h-30*size),(x+w*.33,y-h-30*size),(x+w*.33,y-h-9*size)], .24)
+        for puff in range(3):
+            phase = (t/18 + puff/3) % 1
+            xx = x+w*.29+math.sin(t/16+puff)*phase*13
+            yy = y-h-33*size-phase*48
+            c.move_to(xx,yy)
+            c.curve_to(xx-8,yy-5,xx+12,yy-13,xx+3,yy-22)
+            c.set_source_rgba(.67,.75,.72,(1-phase)*(.08+.04*activity))
+            c.set_line_width(2*size)
+            c.stroke()
+
+    def person(self,c,x,y,t,index,carrying=False):
+        step = math.sin(t*2.5+index)*2
+        c.arc(x,y-12,2.2,0,math.tau)
+        c.set_source_rgba(.75,.80,.73,.48)
+        c.fill()
+        self.line(c,[(x,y-9),(x,y-3),(x-3-step,y)],.42)
+        self.line(c,[(x,y-3),(x+3+step,y)],.42)
+        self.line(c,[(x-4,y-6),(x,y-8),(x+4,y-5)],.37)
+        if carrying:
+            self.line(c,[(x+4,y-9),(x+10,y-9),(x+10,y-3),(x+4,y-3),(x+4,y-9)],.45,warm=True)
+
+    def boat(self,c,x,y,size,t,alpha=.57):
+        c.save()
+        c.translate(x,y+math.sin(t/3)*1.2)
+        c.scale(size/self.ship.get_width(),size/self.ship.get_width())
+        c.set_source_surface(self.ship,0,0)
+        c.paint_with_alpha(alpha)
+        c.restore()
+
+    def draw(self,c,width,height,t,activity=.08,heat=None,network=0):
+        c.save()
+        c.scale(width/1440,height/900)
+        # Most of the upper canvas stays quiet for readable terminal windows.
+        warmth = 0 if heat is None else max(0,min(1,(heat-55)/35))
+        sky = self.cairo.LinearGradient(0,0,0,900)
+        sky.add_color_stop_rgb(0,.045+.025*warmth,.070,.085)
+        sky.add_color_stop_rgb(1,.095+.035*warmth,.145,.155)
+        c.set_source(sky)
+        c.paint()
+        c.set_source_rgba(.55,.65,.58,.028)
+        c.arc(1125,280,43,0,math.tau)
+        c.fill()
+        # Far coast, wooded headland, and the village's gently curving shore.
+        self.line(c,[(0,440),(155,432),(310,441),(480,430),(700,435),(1000,425),(1440,440)],.11)
+        coast=[(0,535),(140,546),(290,565),(455,608),(590,631),(760,608),(900,588),(1100,588),(1290,612),(1440,640)]
+        c.move_to(0,440)
+        c.line_to(1440,440)
+        for p in reversed(coast):
+            c.line_to(*p)
+        c.close_path()
+        c.set_source_rgba(.16,.22,.21,.55)
+        c.fill()
+        self.line(c,coast,.32,1.3)
+        for x,y,s in sorted(self.trees,key=lambda v:v[1]):
+            self.line(c,[(x,y),(x,y-s*1.4)],.20)
+            self.line(c,[(x-s*.45,y-s*.3),(x,y-s*1.6),(x+s*.45,y-s*.3)],.18)
+            self.line(c,[(x-s*.55,y-s*.1),(x,y-s*1.1),(x+s*.55,y-s*.1)],.15)
+        # Village grows gradually; houses never disappear at a film-loop seam.
+        sites=[(790,505,.80,0),(990,489,.74,0),(1140,540,.92,0),
+               (865,562,.64,240),(1265,563,.74,660),(1050,553,.60,1080)]
+        for x,y,size,start in sites:
+            progress = 1 if start == 0 else max(0,min(1,(t-start)/300))
+            if progress > 0:
+                self.house(c,x,y,size,progress,t,activity)
+        self.line(c,[(715,565),(852,535),(975,520),(1090,546),(1230,580)],.09)
+        # Market stalls and quiet piles of wood near the shore.
+        for x in (726,758):
+            self.line(c,[(x,584),(x,562),(x+24,562),(x+24,584)],.26)
+            self.line(c,[(x-4,561),(x+12,551),(x+28,561)],.32)
+        for k in range(5):
+            self.line(c,[(1160+k*4,586-k*2),(1190+k*4,586-k*2)],.22)
+        # Jetty extends into the bay.
+        self.line(c,[(937,592),(901,674),(925,679),(962,593)],.32)
+        for i in range(8):
+            f=i/8
+            self.line(c,[(937-36*f,592+82*f),(962-37*f,593+86*f)],.21)
+        for x,y in ((909,660),(930,662),(922,631),(943,634)):
+            self.line(c,[(x,y+9),(x,y-5)],.30)
+        # Slow, non-synchronised wave fronts fade before reaching the shore.
+        for i in range(12):
+            phase=(t/28+i/12)%1
+            y=632+phase*268
+            c.move_to(0,y)
+            c.curve_to(410,y-5,850,y+5,1440,y-2)
+            c.set_source_rgba(.60,.76,.75,.10*math.sin(math.pi*phase)**2)
+            c.set_line_width(1)
+            c.stroke()
+        # A voyage leaves the jetty, visits the horizon and returns to trade.
+        voyage=t/210
+        cycle=int(voyage)
+        phase=voyage%1
+        destination=100+random.Random(cycle+42).random()*230
+        travel=math.sin(math.pi*max(0,min(1,(phase-.12)/.76)))**2 if .12 < phase < .88 else 0
+        self.boat(c,850+(destination-850)*travel,653-116*travel,105-30*travel,t)
+        if network > .15:
+            self.boat(c,360+100*math.sin(t/90),600,61,t+8,.20+.20*network)
+        # Fisher with a rod; tiny fishing skiff and seasonal gulls.
+        self.person(c,918,656,t,0)
+        rod=math.sin(t/7)*3
+        self.line(c,[(922,648),(947,623+rod),(960,675)],.22)
+        self.boat(c,510+45*math.sin(t/70),701,48,t,.36)
+        workers=3+int(max(0,min(1,activity))*9)
+        for i in range(workers):
+            rng=random.Random(200+i)
+            duration=35+rng.random()*45
+            f=(t/duration+rng.random())%2
+            f=f if f<1 else 2-f
+            start=(720+rng.random()*480,530+rng.random()*57)
+            end=(915,599) if i%3==0 else (725+rng.random()*500,540+rng.random()*50)
+            self.person(c,start[0]+(end[0]-start[0])*f,start[1]+(end[1]-start[1])*f,t,i,i%3==0)
+        # A hunter follows the tree line; a deer occasionally crosses a clearing.
+        self.person(c,290+135*math.sin(t/110),561,t,20)
+        deer=210+50*math.sin(t/180)
+        self.line(c,[(deer-7,531),(deer+6,531),(deer+10,525),(deer+12,525)],.21)
+        self.line(c,[(deer-5,531),(deer-6,539)],.21)
+        self.line(c,[(deer+5,531),(deer+6,539)],.21)
+        for i in range(4):
+            x=650+i*80+math.sin(t/50+i)*55
+            y=330+math.sin(t/17+i)*7
+            self.line(c,[(x-6,y+2),(x-2,y-1),(x,y+1),(x+2,y-1),(x+6,y+2)],.23)
+        c.restore()
+
+
+def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--render',type=Path)
+    parser.add_argument('--time',type=float,default=900)
+    parser.add_argument('--load',type=float,default=.12)
+    args=parser.parse_args()
+    if args.render:
+        try:
+            import cairo
+        except ImportError:
+            import cairocffi as cairo
+        surface=cairo.ImageSurface(cairo.FORMAT_ARGB32,1440,900)
+        Village(cairo).draw(cairo.Context(surface),1440,900,args.time,args.load)
+        args.render.parent.mkdir(parents=True,exist_ok=True)
+        surface.write_to_png(str(args.render))
+        return
+    from ctypes import CDLL
+    CDLL('libgtk4-layer-shell.so')
+    import gi
+    gi.require_version('Gtk','4.0')
+    gi.require_version('Gtk4LayerShell','1.0')
+    gi.require_foreign('cairo')
+    import cairo
+    from gi.repository import Gtk,Gdk,GLib,Gio,Gtk4LayerShell as LayerShell
+
+    class World(Gtk.Application):
+        def __init__(self):
+            super().__init__(application_id='org.hafthios.World')
+            self.village=Village(cairo)
+            self.metrics=Telemetry()
+            self.prefs=preferences()
+            self.elapsed=0.
+            try:
+                value=json.loads((Path.home()/'.local/state/hafthios/world.json').read_text())
+                elapsed=float(value.get('elapsed',0))
+                if math.isfinite(elapsed) and 0 <= elapsed < 1e12:
+                    self.elapsed=elapsed
+            except (OSError,ValueError,TypeError,AttributeError):
+                pass
+            self.last=time.monotonic()
+            self.last_sample=0
+            self.last_save=0
+            self.windows=[]
+            self.draw_count=0
+            self.scene_metrics=(self.metrics.load,None,0)
+
+        def do_activate(self):
+            if getattr(self,'monitors',None):
+                return
+            self.hold()
+            self.monitors=Gdk.Display.get_default().get_monitors()
+            self.monitors.connect('items-changed',self.rebuild)
+            self.rebuild()
+            GLib.timeout_add(83,self.tick)
+
+        def rebuild(self,*_):
+            for window,canvas in self.windows:
+                window.destroy()
+            self.windows=[]
+            for i in range(self.monitors.get_n_items()):
+                window=Gtk.ApplicationWindow(application=self,title='Hafþi · Village')
+                window.set_decorated(False)
+                LayerShell.init_for_window(window)
+                LayerShell.set_namespace(window,'hafthios-world')
+                LayerShell.set_layer(window,LayerShell.Layer.BACKGROUND)
+                LayerShell.set_monitor(window,self.monitors.get_item(i))
+                for edge in (LayerShell.Edge.LEFT,LayerShell.Edge.RIGHT,LayerShell.Edge.TOP,LayerShell.Edge.BOTTOM):
+                    LayerShell.set_anchor(window,edge,True)
+                LayerShell.set_exclusive_zone(window,-1)
+                LayerShell.set_keyboard_mode(window,LayerShell.KeyboardMode.NONE)
+                canvas=Gtk.DrawingArea()
+                canvas.set_draw_func(self.draw)
+                canvas.set_can_target(False)
+                window.set_child(canvas)
+                window.connect('realize',lambda w: w.get_surface().set_input_region(cairo.Region()))
+                self.windows.append((window,canvas))
+                window.set_visible(self.prefs['enabled'])
+            self.ready_sent=False
+
+        def draw(self,canvas,c,width,height):
+            self.village.draw(c,width,height,self.elapsed,*self.scene_metrics)
+            self.draw_count+=1
+
+        def tick(self):
+            now=time.monotonic()
+            dt=max(0,min(1,now-self.last))  # Resume from sleep without a sudden jump.
+            self.last=now
+            changed=False
+            if now-self.last_sample >= 3:
+                prefs=preferences()
+                changed=prefs != self.prefs
+                self.prefs=prefs
+                self.metrics.sample(now)
+                self.last_sample=now
+                for window,canvas in self.windows:
+                    window.set_visible(prefs['enabled'])
+                try:
+                    runtime=Path(os.environ['XDG_RUNTIME_DIR'])/'hafthios-world.json'
+                    runtime.write_text(json.dumps({'elapsed':self.elapsed, 'draws':self.draw_count, **prefs}))
+                except (OSError,KeyError):
+                    pass
+                if not self.ready_sent and self.draw_count and any(w.get_mapped() for w,c in self.windows):
+                    try:
+                        with open('/dev/ttyS0','w') as serial:
+                            serial.write('HAFTHIOS_WORLD_READY\n')
+                    except OSError:
+                        pass
+                    self.ready_sent=True
+            moving=self.prefs['enabled'] and not self.prefs['paused']
+            if moving:
+                self.elapsed+=dt
+                self.scene_metrics=(self.metrics.load if self.prefs['responsive'] else .12,
+                                    self.metrics.temperature if self.prefs['responsive'] else None,
+                                    self.metrics.network if self.prefs['responsive'] else 0)
+            if moving or changed:
+                for window,canvas in self.windows:
+                    canvas.queue_draw()
+            if now-self.last_save >= 30:
+                import runpy
+                backend=runpy.run_path(str(Path(__file__).with_name('hafthios-settings')))
+                try:
+                    backend['atomic_write'](Path.home()/'.local/state/hafthios/world.json',json.dumps({'elapsed':self.elapsed})+'\n')
+                except OSError:
+                    pass
+                self.last_save=now
+            GLib.timeout_add(frame_interval(self.prefs,self.metrics),self.tick)
+            return False
+
+    World().run([sys.argv[0]])
+
+
+if __name__ == '__main__':
+    main()

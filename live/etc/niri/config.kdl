@@ -10,6 +10,7 @@ layout {
     focus-ring { width 2; active-color "#76d1c7"; inactive-color "#344954"; }
 }
 spawn-at-startup "hafthios-welcome" "--desktop"
+spawn-at-startup "hafthios-world"
 spawn-at-startup "hafthios-terminal"
 prefer-no-csd
 window-rule {

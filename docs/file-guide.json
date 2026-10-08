@@ -677,6 +677,51 @@
         "Captures a real GTK screenshot and fails on GTK diagnostics or an early exit.",
         "Checks that waves change between frames and freeze after F10. Preview cannot authenticate or launch a desktop."
       ]
+    },
+    {
+      "path": "live/usr/local/bin/hafthios-world",
+      "purpose": "Draws a quiet living Viking village behind the Niri desktop.",
+      "when": "Starts with each live or installed desktop session.",
+      "connections": [
+        "live/etc/niri/config.kdl",
+        "live/usr/local/bin/hafthios-welcome",
+        "live/usr/local/bin/hafthios-settings",
+        "live/usr/share/plymouth/themes/hafthios/ship.png",
+        "scripts/preview-world.py",
+        "tests/test_world.py"
+      ],
+      "details": [
+        "Native GTK4 background-layer surfaces on each monitor receive no keyboard or pointer input. Cairo reuses the original ship and draws waves, construction, workers, fishing, hunting and trade routes.",
+        "Smoothed aggregate CPU load and received network bytes influence village activity. Recognized CPU temperature sensors influence lighting; unavailable VM sensors remain unknown. No network requests or per-application data are collected.",
+        "The panel stores enable, pause, economy and responsiveness preferences in ~/.config/hafthios/world.json. Village age is saved every 30 seconds in ~/.local/state/hafthios/world.json.",
+        "Animation uses at most 12 frames per second, 8 under high load and 5 in economy mode or on low battery. Pause freezes village age and telemetry appearance; settings continue to be polled. Runtime status supports actual VM verification."
+      ]
+    },
+    {
+      "path": "scripts/preview-world.py",
+      "purpose": "Renders and checks the real village drawing before the ISO build.",
+      "when": "Runs in the greeter CI job or locally with Cairo and Pillow.",
+      "connections": [
+        "live/usr/local/bin/hafthios-world",
+        ".github/workflows/build.yml"
+      ],
+      "details": [
+        "Creates start, moving, paused and busy village PNGs using the same Cairo drawing function used on the desktop.",
+        "Checks that animation and telemetry change pixels, identical paused timestamps render identically and the sky stays dark. Reports the measured render time without assuming GPU acceleration."
+      ]
+    },
+    {
+      "path": "tests/test_world.py",
+      "purpose": "Tests village telemetry, preferences and power-saving decisions.",
+      "when": "Runs with the project unittest suite before the ISO build.",
+      "connections": [
+        "live/usr/local/bin/hafthios-world",
+        "scripts/vm-install.py"
+      ],
+      "details": [
+        "Synthetic proc/sys files verify smoothed CPU/network counters, loopback exclusion, CPU-only temperature readings, missing sensors and low battery.",
+        "Checks preference validation and reduced frame cadence; the separate VM test exercises the actual GTK background and pause/resume behavior."
+      ]
     }
   ]
 }

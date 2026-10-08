@@ -38,6 +38,39 @@ def test_display():
     assert backend['read_outputs']()[name]['logical']['scale'] == float(trial_scale)
     backend['save_display'](name, mode, str(int(scale)) if scale == int(scale) else str(scale))
     print('HAFTHIOS_DISPLAY_TEST_OK: advertised mode, scaling, independent rollback and confirmed persistence', flush=True)
+    # Exercise the running GTK/Wayland wallpaper, not just its settings writer.
+    import json
+    from pathlib import Path
+    world = runpy.run_path('/usr/local/bin/hafthios-world')
+    original = world['preferences']()
+    status = Path(os.environ['XDG_RUNTIME_DIR']) / 'hafthios-world.json'
+    def wait_for(predicate):
+        deadline = time.monotonic() + 12
+        while time.monotonic() < deadline:
+            try:
+                value = json.loads(status.read_text())
+                if predicate(value):
+                    return value
+            except (OSError, ValueError):
+                pass
+            time.sleep(.25)
+        raise RuntimeError('Village did not apply its settings')
+    try:
+        world['save_preferences']({**original, 'enabled': True, 'paused': True})
+        paused = wait_for(lambda v: v['paused'] and v['enabled'])
+        time.sleep(4)
+        still = json.loads(status.read_text())
+        assert still['elapsed'] == paused['elapsed'], (paused, still)
+        world['save_preferences']({**original, 'enabled': True, 'paused': False, 'economy': True})
+        moving = wait_for(lambda v: not v['paused'] and v['economy'] and v['elapsed'] > paused['elapsed'])
+        assert moving['draws'] > paused['draws']
+        world['save_preferences']({**original, 'enabled': False})
+        wait_for(lambda v: not v['enabled'])
+        world['save_preferences']({**original, 'enabled': True})
+        wait_for(lambda v: v['enabled'])
+    finally:
+        world['save_preferences'](original)
+    print('HAFTHIOS_WORLD_TEST_OK: real GTK drawing, pause, resume, economy and disable/re-enable', flush=True)
 
 
 def main():

@@ -50,6 +50,19 @@ Output is in `out/`. The script copies Archiso's baseline profile into a tempora
 
 ## Roadmap
 
+The desktop now includes a **Living village** background, controlled from the
+right-hand Hafþi panel. The original ship travels from a growing coastal village;
+villagers trade, fish and work while slow waves move across the bay. Aggregate
+CPU activity adds workers, received network traffic adds trade, and a recognized
+CPU temperature sensor warms the light. VM temperature sensors may be unavailable.
+Pause freezes the scene; **Save energy** reduces drawing to five frames per second.
+Village progress and preferences persist on the installed system. This is a
+procedural first version rather than a prerecorded film or full village simulation.
+
+CI renders the actual scene before building, then verifies that the native GTK4
+background draws in Niri, pauses and resumes, disables and re-enables, and starts
+after installed BIOS/UEFI login.
+
 - Boot and validate the graphical prototype in a VM.
 - Test live language, keyboard and network settings on real hardware.
 - Test the whole-disk installer on disposable physical test hardware.

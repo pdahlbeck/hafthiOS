@@ -31,6 +31,15 @@ def read_disks():
 
 
 SWEDISH = {
+    'Living village': 'Levande by',
+    'Show village background': 'Visa byn som bakgrund',
+    'Pause animation': 'Pausa rörelsen',
+    'Save energy': 'Spara energi',
+    'Follow computer activity': 'Följ datorns aktivitet',
+    'Save background settings': 'Spara bakgrundsinställningar',
+    'Background settings saved.': 'Bakgrundsinställningarna är sparade.',
+    'A quiet coast that grows over time.': 'En stillsam kust som växer med tiden.',
+    'CPU activity brings more villagers to work. Network traffic brings trade. Temperature changes the light when a CPU sensor is available.': 'Processoraktivitet sätter fler bybor i arbete. Nätverkstrafik ger handel. Temperaturen påverkar ljuset när en processorsensor finns.',
     'Display settings': 'Skärminställningar',
     'Hide panel': 'Dölj panelen',
     'Open panel': 'Öppna panelen',
@@ -110,6 +119,7 @@ def main():
             self.display_trial = None
             self.panel_hidden = False
             self.settings_backend = runpy.run_path(str(Path(__file__).with_name('hafthios-settings')))
+            self.world_backend = runpy.run_path(str(Path(__file__).with_name('hafthios-world')))
             self.settings = self.settings_backend['read_settings']()
             self.translatable = []
             self.installer = runpy.run_path(str(Path(__file__).with_name('hafthios-install')))
@@ -175,6 +185,7 @@ def main():
             self.build_guide_page()
             self.build_settings_page()
             self.build_display_page()
+            self.build_world_page()
             self.build_network_page()
             self.build_error_page()
             keys = Gtk.EventControllerKey()
@@ -318,6 +329,7 @@ def main():
                 page.append(self.button('Install Hafþi OS', self.show_disks))
             page.append(self.button('Language and keyboard', self.show_settings))
             page.append(self.button('Display settings', self.show_display))
+            page.append(self.button('Living village', self.show_world))
             page.append(self.button('Network settings', self.network))
             page.append(self.label('Super + Enter  ·  Terminal\nSuper + B  ·  Browser\nSuper + G  ·  File guide\nSuper + ← / →  ·  Switch windows\nSuper + Q  ·  Close window', 'notice'))
             page.append(self.button('Restart', self.restart))
@@ -706,6 +718,36 @@ def main():
             if self.display_trial:
                 return
             self.pages.set_visible_child_name('desktop' if '--desktop' in sys.argv or Path('/etc/hafthios-installed').exists() else 'welcome')
+
+        def build_world_page(self):
+            page = self.page('world', 'Living village', 'A quiet coast that grows over time.')
+            page.set_spacing(12)
+            self.world_choices = {}
+            for key, title in [('enabled', 'Show village background'), ('paused', 'Pause animation'),
+                               ('economy', 'Save energy'), ('responsive', 'Follow computer activity')]:
+                row = Gtk.Box(spacing=12)
+                choice = Gtk.Switch()
+                row.append(choice)
+                row.append(self.label(title))
+                page.append(row)
+                self.world_choices[key] = choice
+            page.append(self.label('CPU activity brings more villagers to work. Network traffic brings trade. Temperature changes the light when a CPU sensor is available.', 'muted'))
+            page.append(self.button('Save background settings', self.save_world, True))
+            self.world_status = self.label('', 'notice')
+            page.append(self.world_status)
+            page.append(self.button('Back', self.return_home))
+
+        def show_world(self, _):
+            for key, value in self.world_backend['preferences']().items():
+                self.world_choices[key].set_active(value)
+            self.world_status.set_text('')
+            self.pages.set_visible_child_name('world')
+
+        def save_world(self, _):
+            value = {key: widget.get_active() for key, widget in self.world_choices.items()}
+            def finished(result, error):
+                self.world_status.set_text(error or self.tr('Background settings saved.'))
+            self.settings_task(lambda: self.world_backend['save_preferences'](value), finished)
 
         def build_display_page(self):
             page = self.page('display', 'Display settings', 'Choose a display mode. Scaling makes text and controls larger.')
