@@ -31,6 +31,20 @@ def read_disks():
 
 
 SWEDISH = {
+    'Display settings': 'Skärminställningar',
+    'Hide panel': 'Dölj panelen',
+    'Open panel': 'Öppna panelen',
+    'Display': 'Skärm',
+    'Resolution and refresh rate': 'Upplösning och uppdateringsfrekvens',
+    'Scale': 'Skalning',
+    'Try display settings': 'Prova skärminställningarna',
+    'Keep changes': 'Behåll ändringarna',
+    'Revert': 'Återställ',
+    'Choose a display mode. Scaling makes text and controls larger.': 'Välj skärmläge. Skalning gör text och knappar större.',
+    'Display settings saved.': 'Skärminställningarna är sparade.',
+    'Previous display settings restored.': 'Tidigare skärminställningar har återställts.',
+    'No active displays found.': 'Inga aktiva skärmar hittades.',
+    'Available resolutions come from your display or VM graphics device.': 'Tillgängliga upplösningar kommer från skärmen eller VM:ns grafikenhet.',
     'A quiet desktop.\nA powerful terminal.': 'Ett lugnt skrivbord.\nEn kraftfull terminal.',
     'Arch Linux, Wayland and Hafþi. A simpler place to start.': 'Arch Linux, Wayland och Hafþi. En enklare start.',
     'Try the desktop from USB, or install Hafþi OS on a disk.': 'Prova skrivbordet från USB eller installera Hafþi OS på en disk.',
@@ -77,14 +91,24 @@ SWEDISH = {
 
 
 def main():
+    desktop = '--desktop' in sys.argv
+    if desktop:
+        # Layer Shell must be loaded before GTK links libwayland-client.
+        from ctypes import CDLL
+        CDLL('libgtk4-layer-shell.so')
     import gi
     gi.require_version('Gtk', '4.0')
     from gi.repository import Gtk, Gdk, GLib, Gio, Pango
+    if desktop:
+        gi.require_version('Gtk4LayerShell', '1.0')
+        from gi.repository import Gtk4LayerShell as LayerShell
 
     class Welcome(Gtk.Application):
         def __init__(self):
-            super().__init__(application_id='org.hafthios.Welcome',
-                             flags=Gio.ApplicationFlags.NON_UNIQUE)
+            super().__init__(application_id='org.hafthios.Panel' if desktop else 'org.hafthios.Welcome',
+                             flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE if desktop else Gio.ApplicationFlags.NON_UNIQUE)
+            self.display_trial = None
+            self.panel_hidden = False
             self.settings_backend = runpy.run_path(str(Path(__file__).with_name('hafthios-settings')))
             self.settings = self.settings_backend['read_settings']()
             self.translatable = []
@@ -97,6 +121,8 @@ def main():
             self.guide_source_visible = False
 
         def do_activate(self):
+            if getattr(self, 'window', None):
+                return
             css = Gtk.CssProvider()
             css.load_from_data(b'''
                 window { background: #101e28; color: #ecf4f5; }
@@ -118,11 +144,21 @@ def main():
             else:
                 self.window.set_default_size(440, 680)
                 self.window.add_css_class('desktop')
+                self.window.set_decorated(False)
+                LayerShell.init_for_window(self.window)
+                LayerShell.set_namespace(self.window, 'hafthios-panel')
+                LayerShell.set_layer(self.window, LayerShell.Layer.TOP)
+                for edge in (LayerShell.Edge.RIGHT, LayerShell.Edge.TOP, LayerShell.Edge.BOTTOM):
+                    LayerShell.set_anchor(self.window, edge, True)
+                LayerShell.set_keyboard_mode(self.window, LayerShell.KeyboardMode.ON_DEMAND)
+                LayerShell.set_exclusive_zone(self.window, 440)
             root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=24)
             for side in ('top', 'bottom', 'start', 'end'):
                 getattr(root, 'set_margin_' + side)(24 if '--desktop' in sys.argv else 48)
             self.window.set_child(root)
             root.append(self.label('HAFÞI OS  /  DESKTOP' if Path('/etc/hafthios-installed').exists() else 'HAFÞI OS  /  LIVE DESKTOP', 'brand'))
+            if desktop:
+                root.append(self.button('Hide panel', lambda _: self.set_panel_hidden(True)))
             self.pages = Gtk.Stack()
             self.pages.set_vexpand(True)
             self.pages.set_vhomogeneous(False)
@@ -138,6 +174,7 @@ def main():
             self.build_review_page()
             self.build_guide_page()
             self.build_settings_page()
+            self.build_display_page()
             self.build_network_page()
             self.build_error_page()
             keys = Gtk.EventControllerKey()
@@ -153,9 +190,63 @@ def main():
                 self.show_settings(None)
             if '--guide' in sys.argv:
                 self.show_guide(None)
-            self.window.connect('close-request', lambda *_: self.installing)
+            self.window.connect('close-request', self.close_window)
             self.window.present()
+            if desktop:
+                self.tab = Gtk.ApplicationWindow(application=self, title='Hafþi')
+                self.tab.set_decorated(False)
+                self.tab.set_default_size(32, 80)
+                LayerShell.init_for_window(self.tab)
+                LayerShell.set_namespace(self.tab, 'hafthios-panel-tab')
+                LayerShell.set_layer(self.tab, LayerShell.Layer.TOP)
+                LayerShell.set_anchor(self.tab, LayerShell.Edge.RIGHT, True)
+                LayerShell.set_keyboard_mode(self.tab, LayerShell.KeyboardMode.NONE)
+                handle = Gtk.Button(label='‹')
+                handle.set_tooltip_text(self.tr('Open panel'))
+                handle.connect('clicked', lambda _: self.set_panel_hidden(False))
+                self.tab.set_child(handle)
+                try:
+                    hidden = json.loads((Path.home() / '.config/hafthios/panel.json').read_text()).get('hidden', False)
+                except (OSError, ValueError, AttributeError):
+                    hidden = False
+                if hidden is True:
+                    self.set_panel_hidden(True, save=False)
             GLib.idle_add(self.boot_ready)
+
+        def do_command_line(self, command_line):
+            first = not getattr(self, 'window', None)
+            self.activate()
+            if self.installing or self.display_trial:
+                return 0
+            args = command_line.get_arguments()
+            if not first:
+                self.set_panel_hidden(not self.panel_hidden if '--toggle' in args else False)
+            if '--settings' in args:
+                self.set_panel_hidden(False)
+                self.show_settings(None)
+            if '--display' in args:
+                self.set_panel_hidden(False)
+                self.show_display(None)
+            return 0
+
+        def close_window(self, *_):
+            if self.installing or self.display_trial:
+                return True
+            if desktop:
+                self.set_panel_hidden(True)
+                return True
+            return False
+
+        def set_panel_hidden(self, hidden, save=True):
+            if self.installing or self.display_trial:
+                return
+            self.panel_hidden = hidden
+            self.window.set_visible(not hidden)
+            self.tab.set_visible(hidden)
+            if not hidden:
+                self.window.present()
+            if save:
+                self.settings_backend['atomic_write'](Path.home() / '.config/hafthios/panel.json', json.dumps({'hidden': hidden}) + '\n')
 
         def boot_ready(self):
             # Serial marker lets the VM smoke test check that GTK reached the UI.
@@ -226,6 +317,7 @@ def main():
             if not Path('/etc/hafthios-installed').exists():
                 page.append(self.button('Install Hafþi OS', self.show_disks))
             page.append(self.button('Language and keyboard', self.show_settings))
+            page.append(self.button('Display settings', self.show_display))
             page.append(self.button('Network settings', self.network))
             page.append(self.label('Super + Enter  ·  Terminal\nSuper + B  ·  Browser\nSuper + G  ·  File guide\nSuper + ← / →  ·  Switch windows\nSuper + Q  ·  Close window', 'notice'))
             page.append(self.button('Restart', self.restart))
@@ -235,12 +327,13 @@ def main():
                 result = subprocess.run(['niri', 'msg', '--json', 'windows'], capture_output=True, text=True, timeout=5, check=True)
                 with open('/dev/ttyS0', 'w') as serial:
                     serial.write('HAFTHIOS_DESKTOP_READY ' + result.stdout + '\n')
+                    serial.write('HAFTHIOS_PANEL_STATE ' + json.dumps({'hidden': self.panel_hidden}) + '\n')
             except (OSError, subprocess.SubprocessError):
                 pass
             return True
 
         def guide_key(self, controller, keyval, keycode, state):
-            if self.installing:
+            if self.installing or self.display_trial:
                 return False
             if keyval == Gdk.KEY_F4 and not Path('/etc/hafthios-installed').exists():
                 self.show_disks(None)
@@ -248,11 +341,14 @@ def main():
             if keyval == Gdk.KEY_F2 and '--desktop' not in sys.argv:
                 self.try_desktop(None)
                 return True
-            if keyval == Gdk.KEY_Escape and self.pages.get_visible_child_name() in ('settings', 'network', 'error'):
+            if keyval == Gdk.KEY_Escape and self.pages.get_visible_child_name() in ('settings', 'network', 'error', 'display'):
                 self.return_home(None)
                 return True
             if keyval == Gdk.KEY_F3:
                 self.show_settings(None)
+                return True
+            if keyval == Gdk.KEY_F6 and desktop:
+                self.show_display(None)
                 return True
             if keyval == Gdk.KEY_F1:
                 self.show_guide(None)
@@ -607,7 +703,175 @@ def main():
             threading.Thread(target=worker, daemon=True).start()
 
         def return_home(self, _):
+            if self.display_trial:
+                return
             self.pages.set_visible_child_name('desktop' if '--desktop' in sys.argv or Path('/etc/hafthios-installed').exists() else 'welcome')
+
+        def build_display_page(self):
+            page = self.page('display', 'Display settings', 'Choose a display mode. Scaling makes text and controls larger.')
+            page.set_spacing(12)
+            self.output_choice = Gtk.DropDown.new_from_strings([])
+            self.mode_choice = Gtk.DropDown.new_from_strings([])
+            self.scale_choice = Gtk.DropDown.new_from_strings([f'{float(s) * 100:g}%' for s in self.settings_backend['SCALES']])
+            for title, widget in [('Display', self.output_choice), ('Resolution and refresh rate', self.mode_choice), ('Scale', self.scale_choice)]:
+                page.append(self.label(title, 'muted'))
+                page.append(widget)
+            self.output_choice.connect('notify::selected', self.select_output)
+            self.display_apply = self.button('Try display settings', self.try_display, True)
+            page.append(self.display_apply)
+            self.display_status = self.label('', 'notice')
+            page.append(self.display_status)
+            self.display_keep = self.button('Keep changes', self.keep_display, True)
+            self.display_revert = self.button('Revert', self.revert_display)
+            page.append(self.display_keep)
+            page.append(self.display_revert)
+            self.display_keep.set_visible(False)
+            self.display_revert.set_visible(False)
+            page.append(self.label('Available resolutions come from your display or VM graphics device.', 'muted'))
+            self.display_refresh = self.button('Refresh', self.show_display)
+            self.display_back = self.button('Back', self.return_home)
+            page.append(self.display_refresh)
+            page.append(self.display_back)
+            self.outputs = {}
+            self.output_names = []
+
+        def show_display(self, _):
+            self.pages.set_visible_child_name('display')
+            self.display_apply.set_sensitive(False)
+            def finished(outputs, error):
+                self.outputs = {name: value for name, value in (outputs or {}).items()
+                                if value.get('current_mode') is not None and value.get('logical')}
+                self.output_names = list(self.outputs)
+                self.output_choice.set_model(Gtk.StringList.new(self.output_names))
+                self.output_choice.set_selected(0)
+                self.select_output()
+                self.output_choice.grab_focus()
+                self.display_status.set_text(str(error) if error else '' if self.output_names else self.tr('No active displays found.'))
+                try:
+                    with open('/dev/ttyS0', 'w') as serial:
+                        serial.write('HAFTHIOS_DISPLAY_READY ' + json.dumps(self.outputs) + '\n')
+                except OSError:
+                    pass
+                return False
+            self.settings_task(self.settings_backend['read_outputs'], finished)
+
+        def select_output(self, *_):
+            index = self.output_choice.get_selected()
+            if index >= len(self.output_names):
+                return
+            output = self.outputs[self.output_names[index]]
+            self.display_modes = [self.settings_backend['mode_string'](m) for m in output['modes']]
+            labels = [f'{m["width"]} × {m["height"]} · {m["refresh_rate"] / 1000:.2f} Hz' for m in output['modes']]
+            self.mode_choice.set_model(Gtk.StringList.new(labels))
+            self.mode_choice.set_selected(output['current_mode'])
+            scales = self.settings_backend['SCALES']
+            scale = output['logical']['scale']
+            self.scale_choice.set_selected(min(range(len(scales)), key=lambda i: abs(float(scales[i]) - scale)))
+            self.display_apply.set_sensitive(bool(labels))
+
+        def display_controls(self, enabled):
+            for widget in (self.output_choice, self.mode_choice, self.scale_choice, self.display_apply, self.display_refresh, self.display_back):
+                widget.set_sensitive(enabled)
+
+        def try_display(self, _):
+            if self.display_trial:
+                return
+            name = self.output_names[self.output_choice.get_selected()]
+            mode = self.display_modes[self.mode_choice.get_selected()]
+            scale = self.settings_backend['SCALES'][self.scale_choice.get_selected()]
+            self.display_controls(False)
+            self.display_trial = {'pending': True}
+            def finished(result, error):
+                if error:
+                    self.display_trial = None
+                    self.display_controls(True)
+                    self.display_status.set_text(str(error))
+                    return False
+                previous, watchdog = result
+                self.display_trial = {'previous': previous, 'watchdog': watchdog, 'name': name, 'mode': mode, 'scale': scale}
+                try:
+                    with open('/dev/ttyS0', 'w') as serial:
+                        serial.write('HAFTHIOS_DISPLAY_TRIAL ' + json.dumps(self.settings_backend['read_outputs']()) + '\n')
+                except (OSError, subprocess.SubprocessError):
+                    pass
+                self.display_seconds = 15
+                self.display_keep.set_visible(True)
+                self.display_revert.set_visible(True)
+                self.display_keep.grab_focus()
+                self.display_timer = GLib.timeout_add_seconds(1, self.display_countdown)
+                self.display_countdown()
+                return False
+            self.settings_task(lambda: self.settings_backend['trial_display'](name, mode, scale), finished)
+
+        def display_countdown(self):
+            if not self.display_trial or self.display_trial.get('pending'):
+                return False
+            self.display_status.set_text(('Behåll ändringarna? Återställning om ' if self.settings['language'] == 'sv' else 'Keep changes? Reverting in ') + str(self.display_seconds) + ' s')
+            self.display_seconds -= 1
+            if self.display_seconds < 0:
+                self.display_timer = None
+                self.revert_display(None)
+                return False
+            return True
+
+        def finish_display(self):
+            trial = self.display_trial
+            self.display_trial = None
+            if self.display_timer:
+                GLib.source_remove(self.display_timer)
+                self.display_timer = None
+            trial['watchdog'].terminate()
+            trial['watchdog'].wait(timeout=5)
+            self.display_keep.set_visible(False)
+            self.display_revert.set_visible(False)
+            self.display_keep.set_sensitive(True)
+            self.display_revert.set_sensitive(True)
+            self.display_controls(True)
+
+        def keep_display(self, _):
+            trial = self.display_trial
+            if not trial or trial.get('pending'):
+                return
+            self.display_keep.set_sensitive(False)
+            self.display_revert.set_sensitive(False)
+            GLib.source_remove(self.display_timer)
+            self.display_timer = None
+            old_watchdog = trial['watchdog']
+            trial['watchdog'] = self.settings_backend['restore_watchdog'](trial['previous'], seconds=30)
+            old_watchdog.terminate()
+            old_watchdog.wait(timeout=5)
+            # Validation and saving happen before the independent safety timer is cancelled.
+            def finished(result, error):
+                if error:
+                    self.revert_display(None)
+                    return False
+                self.finish_display()
+                self.display_status.set_text(self.tr('Display settings saved.'))
+                return False
+            self.settings_task(lambda: self.settings_backend['save_display'](trial['name'], trial['mode'], trial['scale']), finished)
+
+        def revert_display(self, _):
+            trial = self.display_trial
+            if not trial or trial.get('pending') or trial.get('reverting'):
+                return
+            trial['reverting'] = True
+            self.display_keep.set_sensitive(False)
+            self.display_revert.set_sensitive(False)
+            previous = trial['previous']
+            def finished(result, error):
+                if error:
+                    self.display_status.set_text('Automatic restore: ' + str(error))
+                self.finish_display()
+                self.display_status.set_text(str(error) if error else self.tr('Previous display settings restored.'))
+                return False
+            def restore():
+                try:
+                    self.settings_backend['set_output'](previous['name'], previous['mode'], previous['scale'])
+                except Exception:
+                    # Wait off the GTK thread for the independent retry.
+                    trial['watchdog'].wait(timeout=25)
+                    raise
+            self.settings_task(restore, finished)
 
         def build_settings_page(self):
             page = self.page('settings', 'Settings', 'Choose the language and keyboard for this live session.')
@@ -724,7 +988,7 @@ def main():
         def restart(self, _):
             subprocess.Popen(['systemctl', 'reboot'])
 
-    Welcome().run([sys.argv[0]])
+    Welcome().run(sys.argv if desktop else [sys.argv[0]])
 
 
 if __name__ == '__main__':

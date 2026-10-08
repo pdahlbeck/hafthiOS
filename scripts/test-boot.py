@@ -285,6 +285,33 @@ with tempfile.TemporaryDirectory() as tmp:
             raise RuntimeError('Niri desktop and Hafthi window did not become ready')
         time.sleep(5)
         capture_screen(sock_path, out / 'desktop-screen.ppm')
+        def wait_panel(hidden):
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                text = serial_path.read_text(errors='replace')
+                lines = [line for line in text.splitlines() if line.startswith('HAFTHIOS_PANEL_STATE ')]
+                if lines and json.loads(lines[-1].split(' ', 1)[1])['hidden'] == hidden:
+                    return
+                time.sleep(1)
+            raise RuntimeError('Right panel did not toggle to hidden=' + str(hidden))
+        wait_panel(False)
+        for hidden in (True, False):
+            qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'meta_l'}, {'type': 'qcode', 'data': 'spc'}]})
+            wait_panel(hidden)
+            capture_screen(sock_path, out / ('panel-hidden.ppm' if hidden else 'panel-open.ppm'))
+        qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'meta_l'}, {'type': 'qcode', 'data': 'd'}]})
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            text = serial_path.read_text(errors='replace')
+            if 'HAFTHIOS_DISPLAY_READY ' in text:
+                displays = json.loads(text.split('HAFTHIOS_DISPLAY_READY ')[-1].splitlines()[0])
+                if not displays or not all(o['modes'] for o in displays.values()):
+                    raise RuntimeError('Display page has no advertised modes')
+                break
+            time.sleep(1)
+        else:
+            raise RuntimeError('Display page did not open')
+        capture_screen(sock_path, out / 'display-settings.ppm')
         qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'meta_l'}, {'type': 'qcode', 'data': 'b'}]})
         time.sleep(10)
         qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'ret'}]})
@@ -298,7 +325,7 @@ with tempfile.TemporaryDirectory() as tmp:
             raise RuntimeError('Google Chrome window did not open after download')
         time.sleep(10)
         capture_screen(sock_path, out / 'chrome-screen.ppm')
-        print('BIOS live VM boot passed: ' + ('ship, ' if acceleration == 'tcg' else '') + 'settings, guide, Hafthi and Chrome.', flush=True)
+        print('BIOS live VM boot passed: ' + ('ship, ' if acceleration == 'tcg' else '') + 'settings, guide, Hafthi, right panel toggle, display modes and Chrome.', flush=True)
         # The sole target is a newly created disposable 16 GiB VM disk.
         # Run a script from separate temporary read-only media through the real
         # VM console. No test service or test payload is shipped in the OS ISO.

@@ -5,7 +5,41 @@ import sys
 import traceback
 
 
+def test_display():
+    import runpy, time
+    backend = runpy.run_path('/usr/local/bin/hafthios-settings')
+    outputs = backend['read_outputs']()
+    name, output = next((n, o) for n, o in outputs.items() if o.get('logical') and o.get('current_mode') is not None)
+    mode = backend['mode_string'](output['modes'][output['current_mode']])
+    scale = output['logical']['scale']
+    trial_mode = next((backend['mode_string'](m) for m in output['modes'] if backend['mode_string'](m) != mode), mode)
+    trial_scale = '1.25' if scale != 1.25 else '1'
+    previous, watchdog = backend['trial_display'](name, trial_mode, trial_scale)
+    time.sleep(2)
+    active = backend['read_outputs']()[name]
+    assert backend['mode_string'](active['modes'][active['current_mode']]) == trial_mode
+    assert active['logical']['scale'] == float(trial_scale)
+    # Do not confirm: the independent process must restore real output state.
+    watchdog.wait(timeout=30)
+    time.sleep(2)
+    active = backend['read_outputs']()[name]
+    assert backend['mode_string'](active['modes'][active['current_mode']]) == mode
+    assert active['logical']['scale'] == scale
+    backend['set_output'](name, mode, trial_scale)
+    backend['save_display'](name, mode, trial_scale)
+    current = backend['read_settings']()
+    backend['apply_settings'](current['language'], current['keyboard'])
+    time.sleep(2)
+    assert backend['read_displays']()[name]['scale'] == trial_scale
+    assert backend['read_outputs']()[name]['logical']['scale'] == float(trial_scale)
+    backend['save_display'](name, mode, str(int(scale)) if scale == int(scale) else str(scale))
+    print('HAFTHIOS_DISPLAY_TEST_OK: advertised mode, scaling, independent rollback and confirmed persistence', flush=True)
+
+
 def main():
+    if sys.argv[1:] == ['--display-test'] and os.geteuid() != 0:
+        test_display()
+        return
     if sys.argv[1:] != ['--disposable-vm'] or os.geteuid() != 0:
         raise SystemExit('Run only in the CI-created disposable live VM as root.')
     sys.stdout = open('/dev/ttyS0', 'w', buffering=1)
@@ -15,6 +49,13 @@ def main():
     try:
         print('HAFTHIOS_INSTALL_STARTED', flush=True)
         import runpy, subprocess
+        from pathlib import Path
+        import pwd
+        runtime = Path('/run/user') / str(pwd.getpwnam('hafthi').pw_uid)
+        socket = next(runtime.glob('niri*.sock'))
+        subprocess.run(['runuser', '-u', 'hafthi', '--', 'env', f'NIRI_SOCKET={socket}',
+                        f'XDG_RUNTIME_DIR={runtime}', 'python3', str(Path(__file__).resolve()), '--display-test'],
+                       check=True, timeout=90)
         for repository in ('core', 'extra'):
             servers = subprocess.check_output(['pacman-conf', '--repo', repository, 'Server'], text=True).strip()
             if not servers.startswith('https://'):

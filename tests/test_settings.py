@@ -6,12 +6,61 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 settings = runpy.run_path(str(ROOT / 'live/usr/local/bin/hafthios-settings'))
 
 
 class LiveSettingsTests(unittest.TestCase):
+    def test_confirmed_display_survives_language_change_and_invalid_cache_is_ignored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            path = home / '.config/hafthios/displays.json'
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps({'Virtual-1': {'mode': '1920x1080@60.000', 'scale': '1.5'},
+                                        'bad': {'mode': '"; spawn "sh"', 'scale': '1'}}))
+            with patch('subprocess.run'):
+                settings['apply_settings']('sv', 'se', home, ROOT / 'live/etc/niri/config.kdl')
+            config = (home / '.config/niri/config.kdl').read_text()
+            self.assertIn('output "Virtual-1"', config)
+            self.assertIn('mode "1920x1080@60.000"', config)
+            self.assertIn('scale 1.5', config)
+            self.assertNotIn('spawn "sh"', config)
+
+    def test_trial_rejects_unadvertised_modes_and_starts_restore_before_change(self):
+        output = {'Virtual-1': {'modes': [{'width': 1280, 'height': 800, 'refresh_rate': 60000}],
+                                 'current_mode': 0, 'logical': {'scale': 1.0}}}
+        events = []
+        watchdog = SimpleNamespace(terminate=lambda: events.append('cancel'), wait=lambda **kw: None)
+        with patch.dict(settings['trial_display'].__globals__,
+                        read_outputs=lambda: output,
+                        restore_watchdog=lambda previous: events.append(('watchdog', previous)) or watchdog,
+                        set_output=lambda *args: events.append(('change', args))):
+            with self.assertRaises(ValueError):
+                settings['trial_display']('Virtual-1', '3840x2160@60.000', '1')
+            self.assertEqual(events, [])
+            previous, process = settings['trial_display']('Virtual-1', '1280x800@60.000', '1.5')
+            self.assertEqual(events[0], ('watchdog', previous))
+            self.assertEqual(events[1], ('change', ('Virtual-1', '1280x800@60.000', '1.5')))
+            self.assertIs(process, watchdog)
+            self.assertEqual(previous['scale'], '1.0')
+
+    def test_failed_display_change_restores_original_mode(self):
+        output = {'Virtual-1': {'modes': [{'width': 1280, 'height': 800, 'refresh_rate': 60000}],
+                                 'current_mode': 0, 'logical': {'scale': 1.0}}}
+        calls = []
+        watchdog = SimpleNamespace(terminate=lambda: calls.append('cancel'), wait=lambda **kw: None)
+        def change(*args):
+            calls.append(args)
+            if len(calls) == 1:
+                raise subprocess.CalledProcessError(1, 'niri')
+        with patch.dict(settings['trial_display'].__globals__, read_outputs=lambda: output,
+                        restore_watchdog=lambda previous: watchdog, set_output=change):
+            with self.assertRaises(subprocess.CalledProcessError):
+                settings['trial_display']('Virtual-1', '1280x800@60.000', '1.5')
+        self.assertEqual(calls[-2:], [('Virtual-1', '1280x800@60.000', '1.0'), 'cancel'])
+
     def test_language_and_keyboard_are_independent_and_written_without_root(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)

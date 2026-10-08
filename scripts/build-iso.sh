@@ -52,6 +52,7 @@ greetd
 greetd-gtkgreet
 foot
 gtk4
+gtk4-layer-shell
 python
 python-gobject
 python-cairo

@@ -19,7 +19,8 @@ window-rule {
 binds {
     Mod+Return { spawn "hafthios-terminal"; }
     Mod+B { spawn "hafthios-chrome"; }
-    Mod+Space { spawn "hafthios-welcome" "--desktop"; }
+    Mod+Space { spawn "hafthios-welcome" "--desktop" "--toggle"; }
+    Mod+D { spawn "hafthios-welcome" "--desktop" "--display"; }
     Mod+Comma { spawn "hafthios-welcome" "--desktop" "--settings"; }
     Mod+G { spawn "hafthios-welcome" "--guide"; }
     Mod+Q { close-window; }

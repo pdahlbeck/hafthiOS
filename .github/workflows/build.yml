@@ -142,6 +142,8 @@ jobs:
             out/guide-screen.ppm
             out/settings-screen.ppm
             out/desktop-screen.ppm
+            out/panel-*.ppm
+            out/display-settings.ppm
             out/chrome-screen.ppm
             out/boot-serial.log
             out/qemu.log

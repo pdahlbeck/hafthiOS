@@ -28,8 +28,8 @@ arch-chroot "$root" /bin/bash -euc '
     test -f /etc/pacman.d/gnupg/hafthios-ready
     pacman-conf SigLevel | grep -qx PackageRequired
     pacman-conf SigLevel | grep -qx PackageTrustedOnly
-    pacman -Syu --noconfirm --needed git base-devel greetd greetd-gtkgreet
-    pacman -Q git base-devel greetd greetd-gtkgreet
+    pacman -Syu --noconfirm --needed git base-devel greetd greetd-gtkgreet gtk4-layer-shell
+    pacman -Q git base-devel greetd greetd-gtkgreet gtk4-layer-shell
     test -f /etc/pam.d/greetd
     test -x /usr/bin/gtkgreet
     git --version

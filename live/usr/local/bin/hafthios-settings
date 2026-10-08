@@ -6,10 +6,94 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import time
+import sys
+import re
 
 LANGUAGES = {'en': 'en_US.UTF-8', 'sv': 'sv_SE.UTF-8'}
 KEYBOARDS = {'us', 'se'}
 DEFAULT = {'language': 'en', 'keyboard': 'us'}
+SCALES = ('1', '1.25', '1.5', '1.75', '2', '2.5', '3')
+
+
+def read_outputs():
+    result = subprocess.run(['niri', 'msg', '--json', 'outputs'], check=True,
+                            capture_output=True, text=True, timeout=10)
+    return json.loads(result.stdout)
+
+
+def mode_string(mode):
+    return f"{int(mode['width'])}x{int(mode['height'])}@{int(mode['refresh_rate']) / 1000:.3f}"
+
+
+def read_displays(home=None):
+    try:
+        value = json.loads(((home or Path.home()) / '.config/hafthios/displays.json').read_text())
+        if not isinstance(value, dict):
+            return {}
+        return {name: setting for name, setting in value.items()
+                if isinstance(name, str) and isinstance(setting, dict)
+                and isinstance(setting.get('mode'), str)
+                and re.fullmatch(r'\d+x\d+@\d+\.\d{3}', setting['mode'])
+                and str(setting.get('scale')) in SCALES}
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def display_config(displays):
+    return ''.join(f'\noutput {json.dumps(name)} {{\n    mode {json.dumps(value["mode"])}\n    scale {value["scale"]}\n}}\n'
+                   for name, value in displays.items())
+
+
+def set_output(name, mode, scale):
+    for action, value in [('mode', mode), ('scale', str(scale))]:
+        subprocess.run(['niri', 'msg', 'output', name, action, value], check=True,
+                       capture_output=True, text=True, timeout=10)
+
+
+def restore_watchdog(previous, seconds=20):
+    process = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--rollback-after', str(seconds)],
+                               stdin=subprocess.PIPE, text=True, start_new_session=True)
+    process.stdin.write(json.dumps(previous))
+    process.stdin.close()
+    return process
+
+
+def trial_display(name, mode, scale):
+    outputs = read_outputs()
+    output = outputs.get(name)
+    if not output or output.get('current_mode') is None or not output.get('logical'):
+        raise ValueError('The display is no longer connected')
+    if mode not in [mode_string(m) for m in output['modes']] or str(scale) not in SCALES:
+        raise ValueError('Choose a mode offered by the connected display')
+    previous = {'name': name, 'mode': mode_string(output['modes'][output['current_mode']]),
+                'scale': str(output['logical']['scale'])}
+    # A separate process restores the display even if GTK closes or crashes.
+    watchdog = restore_watchdog(previous)
+    try:
+        set_output(name, mode, scale)
+    except Exception:
+        try:
+            set_output(name, previous['mode'], previous['scale'])
+        except Exception:
+            pass  # The independent watchdog still gets another restore attempt.
+        else:
+            watchdog.terminate()
+            watchdog.wait(timeout=5)
+        raise
+    return previous, watchdog
+
+
+def save_display(name, mode, scale, home=None):
+    home = home or Path.home()
+    output = read_outputs().get(name)
+    if not output or mode not in [mode_string(m) for m in output['modes']] or str(scale) not in SCALES:
+        raise ValueError('The display mode is no longer available')
+    displays = read_displays(home)
+    displays[name] = {'mode': mode, 'scale': str(scale)}
+    current = read_settings(home)
+    apply_settings(current['language'], current['keyboard'], home, displays=displays)
+    atomic_write(home / '.config/hafthios/displays.json', json.dumps(displays) + '\n')
 
 
 def read_settings(home=None):
@@ -35,7 +119,7 @@ def atomic_write(path, content):
         temporary.unlink(missing_ok=True)
 
 
-def apply_settings(language, keyboard, home=None, base=Path('/etc/niri/config.kdl')):
+def apply_settings(language, keyboard, home=None, base=Path('/etc/niri/config.kdl'), displays=None):
     if language not in LANGUAGES or keyboard not in KEYBOARDS:
         raise ValueError('Unsupported language or keyboard layout')
     home = home or Path.home()
@@ -45,6 +129,7 @@ def apply_settings(language, keyboard, home=None, base=Path('/etc/niri/config.kd
         raise ValueError('The base keyboard configuration is missing or ambiguous')
     text = text.replace(old, f'keyboard {{ xkb {{ layout "{keyboard}"; }}; }}')
     text += f'\nenvironment {{ LANG "{LANGUAGES[language]}"; LANGUAGE "{language}"; }}\n'
+    text += display_config(read_displays(home) if displays is None else displays)
     # Validate before replacing a working config. Niri watches this path and
     # reloads the new layout for the running desktop automatically.
     config = home / '.config/niri/config.kdl'
@@ -66,7 +151,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--language', choices=LANGUAGES)
     parser.add_argument('--keyboard', choices=sorted(KEYBOARDS))
+    parser.add_argument('--rollback-after', type=int)
     args = parser.parse_args()
+    if args.rollback_after is not None:
+        previous = json.load(sys.stdin)
+        time.sleep(max(1, min(args.rollback_after, 30)))
+        set_output(previous['name'], previous['mode'], previous['scale'])
+        return
     if args.language is None and args.keyboard is None:
         print(json.dumps(read_settings()))
         return

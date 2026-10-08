@@ -76,7 +76,8 @@ Choose **Project source guide** for the separate, detailed source explanations a
 
 - **Super + Enter**: open Hafþi.
 - **Super + B**: open or download Google Chrome.
-- **Super + Space**: open the desktop controls.
+- **Super + Space**: show or hide the right-hand desktop panel.
+- **Super + D**: open display settings.
 - **Super + G**: open the local file guide.
 - **Super + Left / Right**: switch columns.
 - **Super + Q**: close the focused window.
@@ -84,6 +85,17 @@ Choose **Project source guide** for the separate, detailed source explanations a
 Use at least **4 GB RAM** for the desktop and first-use browser download. The live writable layer can use up to half the RAM. Niri requires accelerated graphics, including virtual 3D acceleration in a VM. The welcome screen can run without it. The live session includes Fish, audio services, common Intel/AMD graphics and Wi-Fi firmware, and normal Arch package tools; disk installation starts only after the explicit erase confirmation. Hafþi is built from a pinned source commit in `scripts/build-hafthi.sh` and retains its MIT license.
 
 ## Live settings
+
+The desktop panel stays at the right edge. **Hide panel** gives the space back
+to your windows and leaves a small edge tab to reopen it. Its hidden state is
+remembered. Keyboard shortcuts open the same panel rather than creating copies.
+
+**Display settings** lists connected displays, their advertised resolutions and
+refresh rates, plus UI scaling. **Try display settings** gives you 15 seconds to
+keep the change. Unconfirmed changes revert; an independent safety process also
+restores the previous mode if the panel crashes. Confirmed settings survive
+restart on an installed system and are preserved when changing language.
+VM resolution options depend on the virtual graphics device.
 
 Choose **Language and keyboard** on the welcome screen or in the desktop controls.
 English and Swedish interface language can be selected independently of US and

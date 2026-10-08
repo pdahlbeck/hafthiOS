@@ -188,7 +188,9 @@
         "A scrollable content area keeps controls reachable in small VM windows. A failed desktop shows actual local diagnostics.",
         "Install Hafthi OS lists eligible unmounted disks, requests a root-owned plan, reviews full-disk erasure and requires matching passwords and the exact erase phrase.",
         "Installation runs in a worker with JSON progress. Passwords are passed through stdin, not command arguments or log messages. Close and navigation are blocked while writing.",
-        "The installed desktop omits the installer button; its ready marker reports root filesystem and persistent settings for the VM test."
+        "The installed desktop omits the installer button; its ready marker reports root filesystem and persistent settings for the VM test.",
+        "The desktop uses GTK4 Layer Shell to anchor a single panel to the right edge. Hide panel leaves a small clickable edge tab; Super+Space toggles the same instance. The user's hidden state is saved separately.",
+        "Display settings lists Niri's advertised modes and scaling. A trial has a 15-second confirmation countdown plus an independent restore process if the GUI crashes. Only confirmed settings are written."
       ]
     },
     {
@@ -471,6 +473,8 @@
         "live/usr/local/bin/hafthios-terminal"
       ],
       "details": [
+        "Display modes are obtained from niri msg --json outputs. Trials reject modes not advertised by the selected connected output, start an independent restore watchdog, then apply mode and scale through Niri IPC.",
+        "Confirmed modes and scales are stored in displays.json and appended to the validated user Niri configuration. Language changes preserve these display settings.",
         "Only English/Swedish locales and US/Swedish keyboard layouts are accepted. Language and layout are independent.",
         "Niri validates a temporary configuration before the current user configuration is atomically replaced. Niri watches that file to reload the keyboard.",
         "The helper writes settings.json and a shell environment file in the user home. It does not mount or modify a target disk."
