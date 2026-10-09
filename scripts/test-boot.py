@@ -12,6 +12,50 @@ import tempfile
 import time
 import unicodedata
 
+def open_live_console(sock_path, out, serial_path):
+    qmp_request(sock_path, 'send-key', {'keys':[
+        {'type':'qcode','data':'ctrl'}, {'type':'qcode','data':'alt'},
+        {'type':'qcode','data':'f2'}]})
+    console_screen = out / 'installer-console.ppm'
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
+        capture_screen(sock_path, console_screen)
+        console_text = subprocess.run(['tesseract', str(console_screen), 'stdout'],
+                                      capture_output=True, text=True, timeout=20).stdout.lower()
+        if 'login:' in console_text:
+            break
+        time.sleep(2)
+    else:
+        raise RuntimeError('The live tty2 login prompt did not appear: ' + console_text)
+    # Wait for agetty to initialize instead of racing its first key event.
+    # A blank submission wakes the console without submitting a username.
+    type_text(sock_path, '')
+    time.sleep(2)
+    for attempt in range(3):
+        qmp_request(sock_path, 'send-key', {'keys':[
+            {'type':'qcode','data':'ctrl'}, {'type':'qcode','data':'u'}]})
+        time.sleep(1)
+        type_text(sock_path, 'hafthi', submit=False)
+        time.sleep(1)
+        capture_screen(sock_path, console_screen)
+        console_text = subprocess.run(['tesseract', str(console_screen), 'stdout'],
+                                      capture_output=True, text=True, timeout=20).stdout.lower()
+        if re.search(r'(?:login:\s*|\n)\s*hafthi(?:\s|$)', console_text):
+            type_text(sock_path, '')
+            break
+    else:
+        raise RuntimeError('The live login username was not received intact: ' + console_text)
+    time.sleep(5)
+    type_text(sock_path, 'echo HAFTHIOS_INSTALL_CONSOLE_READY > /dev/ttyS0')
+    deadline = time.monotonic() + 45
+    while time.monotonic() < deadline:
+        if any(line.strip() == 'HAFTHIOS_INSTALL_CONSOLE_READY' for line in serial_path.read_text(errors='replace').splitlines()):
+            break
+        time.sleep(1)
+    else:
+        raise RuntimeError('The installation test console did not execute its readiness command')
+    capture_screen(sock_path, out / 'installer-console.ppm')
+
 def normalize_screen_text(value):
     # OCR engines may omit Swedish accents and split a label across lines.
     value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode().lower()
@@ -270,6 +314,14 @@ with tempfile.TemporaryDirectory() as tmp:
             if 'HAFTHIOS_DISKS_READY ' in text:
                 available = json.loads(text.split('HAFTHIOS_DISKS_READY ')[-1].splitlines()[0])
                 if available != ['/dev/vda']:
+                    open_live_console(sock_path, out, serial_path)
+                    for diagnostic in ('sudo findmnt --raw --output TARGET,SOURCE,FSTYPE,OPTIONS',
+                                       'cat /proc/cmdline',
+                                       'sudo blkid',
+                                       'sudo lsblk --json --bytes --output PATH,TYPE,RO,SIZE,MOUNTPOINTS',
+                                       'ls /etc/hafthios-installed'):
+                        type_text(sock_path, diagnostic + ' > /dev/ttyS0 2>&1')
+                        time.sleep(2)
                     raise RuntimeError('Installer offered unexpected target disks: ' + repr(available))
                 break
             time.sleep(1)
@@ -363,48 +415,7 @@ with tempfile.TemporaryDirectory() as tmp:
         # VM console. No test service or test payload is shipped in the OS ISO.
         # A real text console is deterministic even if Chrome retains focus.
         # The live hafthi account has an empty password; installed PAM is separate.
-        qmp_request(sock_path, 'send-key', {'keys':[
-            {'type':'qcode','data':'ctrl'}, {'type':'qcode','data':'alt'},
-            {'type':'qcode','data':'f2'}]})
-        console_screen = out / 'installer-console.ppm'
-        deadline = time.monotonic() + 90
-        while time.monotonic() < deadline:
-            capture_screen(sock_path, console_screen)
-            console_text = subprocess.run(['tesseract', str(console_screen), 'stdout'],
-                                          capture_output=True, text=True, timeout=20).stdout.lower()
-            if 'login:' in console_text:
-                break
-            time.sleep(2)
-        else:
-            raise RuntimeError('The live tty2 login prompt did not appear: ' + console_text)
-        # Wait for agetty to initialize instead of racing its first key event.
-        # A blank submission wakes the console without submitting a username.
-        type_text(sock_path, '')
-        time.sleep(2)
-        for attempt in range(3):
-            qmp_request(sock_path, 'send-key', {'keys':[
-                {'type':'qcode','data':'ctrl'}, {'type':'qcode','data':'u'}]})
-            time.sleep(1)
-            type_text(sock_path, 'hafthi', submit=False)
-            time.sleep(1)
-            capture_screen(sock_path, console_screen)
-            console_text = subprocess.run(['tesseract', str(console_screen), 'stdout'],
-                                          capture_output=True, text=True, timeout=20).stdout.lower()
-            if re.search(r'(?:login:\s*|\n)\s*hafthi(?:\s|$)', console_text):
-                type_text(sock_path, '')
-                break
-        else:
-            raise RuntimeError('The live login username was not received intact: ' + console_text)
-        time.sleep(5)
-        type_text(sock_path, 'echo HAFTHIOS_INSTALL_CONSOLE_READY > /dev/ttyS0')
-        deadline = time.monotonic() + 45
-        while time.monotonic() < deadline:
-            if any(line.strip() == 'HAFTHIOS_INSTALL_CONSOLE_READY' for line in serial_path.read_text(errors='replace').splitlines()):
-                break
-            time.sleep(1)
-        else:
-            raise RuntimeError('The installation test console did not execute its readiness command')
-        capture_screen(sock_path, out / 'installer-console.ppm')
+        open_live_console(sock_path, out, serial_path)
         type_text(sock_path, 'sudo mount -o ro /dev/disk/by-label/hafthios-test /mnt')
         time.sleep(3)
         type_text(sock_path, 'sudo python3 /mnt/install.py --disposable-vm')
