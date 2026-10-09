@@ -159,13 +159,22 @@ with tempfile.TemporaryDirectory() as tmp:
     disk = tmp / 'disk.raw'
     with disk.open('wb') as stream:
         stream.truncate(16 * 1024**3)
+    # A writable, full-size USB exposes the original regression: after RAM
+    # boot it has no mounts and would otherwise look like an eligible target.
+    live_usb = tmp / 'live-usb.raw'
+    shutil.copyfile(iso, live_usb)
+    with live_usb.open('r+b') as stream:
+        stream.truncate(32 * 1024**3)
     sock_path = tmp / 'qmp.sock'
     serial_path = out / 'boot-serial.log'
     process = subprocess.Popen([
         # The live overlay uses half of RAM; signed full upgrades need headroom.
         'qemu-system-x86_64', '-accel', acceleration, '-m', '8192', '-smp', '2',
         '-nic', 'user,model=virtio-net-pci',
-        '-cpu', cpu_model, '-cdrom', str(iso), '-boot', 'd',
+        '-cpu', cpu_model,
+        '-device', 'qemu-xhci',
+        '-drive', f'file={live_usb},format=raw,if=none,id=liveusb',
+        '-device', 'usb-storage,drive=liveusb,bootindex=1',
         '-drive', f'file={payload_iso},format=raw,media=cdrom,readonly=on',
         '-drive', f'file={disk},format=raw,if=virtio',
         '-vga', 'none', '-device', 'virtio-vga-gl', '-display', 'sdl,gl=on',

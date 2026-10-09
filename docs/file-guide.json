@@ -121,7 +121,8 @@
         "Installs git and base-devel with pacman -Syu in the live VM, validates their executables, and then copies that system to disk.",
         "Waits for a newly created focused Hafthi window rather than accepting a stale focus report before typing the package/installation test script.",
         "Waits for the live text login prompt and verifies the complete username before submitting it, so a console startup race cannot silently drop its first character.",
-        "Sends complete QMP key chords with non-overlapping release timers and uses a virtio network adapter in the disposable VMs. Kernel messages may wrap the echoed login username onto a new line."
+        "Sends complete QMP key chords with non-overlapping release timers and uses a virtio network adapter in the disposable VMs. Kernel messages may wrap the echoed login username onto a new line.",
+        "Boots the ISO written to a writable 32 GiB virtual USB. This reproduces physical USB copy-to-RAM boot while keeping a separate empty 16 GiB installation disk and read-only test CD."
       ]
     },
     {
@@ -190,7 +191,8 @@
         "Installation runs in a worker with JSON progress. Passwords are passed through stdin, not command arguments or log messages. Close and navigation are blocked while writing.",
         "The installed desktop omits the installer button; its ready marker reports root filesystem and persistent settings for the VM test.",
         "The desktop uses GTK4 Layer Shell to anchor a single panel to the right edge. Hide panel leaves a small clickable edge tab; Super+Space toggles the same instance. The user's hidden state is saved separately.",
-        "Display settings lists Niri's advertised modes and scaling. A trial has a 15-second confirmation countdown plus an independent restore process if the GUI crashes. Only confirmed settings are written."
+        "Display settings lists Niri's advertised modes and scaling. A trial has a 15-second confirmation countdown plus an independent restore process if the GUI crashes. Only confirmed settings are written.",
+        "Displays the installer backend JSON error when preparing installation fails, rather than hiding the cause behind a subprocess exit status."
       ]
     },
     {
@@ -523,7 +525,8 @@
         "Root-only plans expire after 30 minutes and bind disk path, size, model, serial, WWN and device number. Exact typed confirmation and a valid password are checked again before writes.",
         "Creates BIOS boot, EFI and ext4 partitions, copies the live root and home, installs normal kernel/initramfs/GRUB and retains the offline ISO guide.",
         "Removes live autologin and passwordless sudo, locks root, sets the hafthi password through stdin, and applies the saved language/layout to the installed home.",
-        "A single-instance lock and consumed plans prevent concurrent/repeated execution. Errors stop installation and may leave the confirmed disk partially written."
+        "A single-instance lock and consumed plans prevent concurrent/repeated execution. Errors stop installation and may leave the confirmed disk partially written.",
+        "Recognizes the actual Archiso overlay and read-only squashfs root with or without mounted boot media. Resolves original USB identity from Archiso UUID/label/device arguments and excludes it after copy-to-RAM; refuses disk selection if live media cannot be identified."
       ]
     },
     {
@@ -537,7 +540,8 @@
       "details": [
         "Tests exclusion of live media, mounted roots, swap, readonly/small disks and stacked devices.",
         "Checks exact confirmation, password constraints, expiry and changed disk identity. Invalid confirmation cannot reach a disk-writing command.",
-        "Uses a temporary target tree to verify removal of live autologin/NOPASSWD and replacement with normal installed kernel and locale settings. The actual install/boot path is exercised in a disposable VM."
+        "Uses a temporary target tree to verify removal of live autologin/NOPASSWD and replacement with normal installed kernel and locale settings. The actual install/boot path is exercised in a disposable VM.",
+        "Checks RAM and USB live-root recognition, rejects installed or unrelated roots, excludes an unmounted USB by boot UUID, and fails closed when live media identity is missing."
       ]
     },
     {
@@ -635,7 +639,8 @@
       "details": [
         "Requires the explicit --disposable-vm argument and uses the normal live installer with its disk confirmation checks.",
         "Tests signed package transactions, installs to /dev/vda and reports progress over the VM serial console.",
-        "It is never embedded in the distributable ISO or attached to installed BIOS/UEFI boot tests."
+        "It is never embedded in the distributable ISO or attached to installed BIOS/UEFI boot tests.",
+        "Requires a RAM-backed live root with bootmnt unmounted and only the disposable disk eligible before installation. Emits HAFTHIOS_RAM_USB_INSTALL_TEST_OK alongside full installation and desktop checks."
       ]
     },
     {

@@ -21,6 +21,49 @@ def disk(path='/dev/vda', **updates):
 
 
 class InstallationSafetyTests(unittest.TestCase):
+    def test_live_root_accepts_ram_and_usb_but_rejects_installed_or_unrelated_roots(self):
+        globals_ = backend['live_root'].__globals__
+        mounts = {'/': 'overlay rw,lowerdir=/run/archiso/airootfs,upperdir=/run/archiso/cowspace/upper',
+                  '/run/archiso/airootfs': 'squashfs ro,relatime'}
+        with patch.dict(globals_, mount_info=lambda path: mounts.get(path, '')):
+            with patch.object(Path, 'exists', return_value=False):
+                self.assertTrue(backend['live_root']())  # bootmnt absent: copy-to-RAM
+                mounts['/run/archiso/bootmnt'] = 'iso9660 ro'
+                self.assertTrue(backend['live_root']())
+                mounts['/'] = 'ext4 rw'
+                self.assertFalse(backend['live_root']())
+                mounts['/'] = 'overlay rw,lowerdir=/run/other'
+                self.assertFalse(backend['live_root']())
+                mounts['/'] = 'overlay rw,lowerdir=/run/archiso/airootfs'
+                mounts['/run/archiso/airootfs'] = 'squashfs rw'
+                self.assertFalse(backend['live_root']())
+                mounts['/run/archiso/airootfs'] = 'squashfs ro'
+            with patch.object(Path, 'exists', return_value=True):
+                self.assertFalse(backend['live_root']())
+
+    def test_unmounted_live_usb_resolved_by_boot_uuid_is_excluded_and_unknown_media_fails_closed(self):
+        payload = {'blockdevices': [disk('/dev/nvme0n1'),
+                   disk('/dev/sda', children=[{'path': '/dev/sda1', 'type': 'part', 'mountpoints': [None]}])]}
+        def command(args, **kwargs):
+            if args[0] == 'findmnt': return ''
+            if args[0] == 'blkid': return '/dev/sda1\n'
+            if args[0] == 'lsblk': return json.dumps(payload)
+            self.fail(str(args))
+        globals_ = backend['read_disks'].__globals__
+        with patch.dict(globals_, command=command, live_root=lambda: True):
+            with patch.object(Path, 'read_text', return_value='archisobasedir=arch archisosearchuuid=live-uuid'):
+                self.assertEqual([d['path'] for d in backend['read_disks']()], ['/dev/nvme0n1'])
+            with patch.object(Path, 'read_text', return_value='quiet splash'):
+                with self.assertRaisesRegex(RuntimeError, 'Could not identify the live USB'):
+                    backend['read_disks']()
+
+    def test_mounted_live_media_source_is_excluded_without_boot_uuid(self):
+        def command(args, **kwargs):
+            return '/dev/sda1\n' if args[0] == 'findmnt' else ''
+        with patch.dict(backend['live_media_paths'].__globals__, command=command):
+            with patch.object(Path, 'read_text', return_value='quiet splash'):
+                self.assertEqual(backend['live_media_paths'](), {'/dev/sda1'})
+
     def test_live_media_mounted_root_swap_readonly_small_and_stacked_devices_are_excluded(self):
         safe = disk()
         values = [safe, disk('/dev/sda', children=[{'type':'part','mountpoints':['/run/archiso/bootmnt']}]),

@@ -165,3 +165,7 @@ the source snapshots inside the ISO still describe that original build.
 A reused-ISO installation retest uses KVM when the runner supports it, with TCG
 as fallback. Ship animation and Esc toggling remain part of a full TCG build;
 the faster KVM retest checks the installer, applications and BIOS/UEFI disk boot.
+
+### USB installation and RAM-backed live sessions
+
+The installer accepts both USB-backed and copy-to-RAM Archiso sessions. The original live USB remains excluded from disk selection even after Archiso unmounts it. An unidentifiable live medium stops planning rather than offering unsafe targets. Installation errors include the backend reason. CI boots a writable 32 GiB virtual USB, verifies RAM-root recognition and live-media exclusion, then installs onto a separate empty disk and tests installed BIOS/UEFI login and logout.

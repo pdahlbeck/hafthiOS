@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import shlex
 import stat
 import subprocess
 import sys
@@ -32,16 +33,54 @@ def descendants(device):
         yield from descendants(child)
 
 
-def eligible_disks(payload):
+def eligible_disks(payload, excluded=()):
     return [disk for disk in payload.get('blockdevices', [])
             if disk.get('type') == 'disk' and not disk.get('ro')
             and int(disk.get('size') or 0) >= MIN_SIZE
+            and all(item.get('path') not in excluded for item in descendants(disk))
             and all(not any(item.get('mountpoints') or []) for item in descendants(disk))
             and all(item.get('type') in ('disk', 'part') for item in descendants(disk))]
 
 
+def mount_info(path):
+    return command(['findmnt', '--noheadings', '--raw', '--mountpoint', path,
+                    '--output', 'FSTYPE,OPTIONS'], allowed=(0, 1)).strip()
+
+
+def live_root():
+    if Path('/etc/hafthios-installed').exists():
+        return False
+    root = mount_info('/')
+    image = mount_info('/run/archiso/airootfs')
+    return (root.startswith('overlay ') and
+            'lowerdir=/run/archiso/airootfs' in root and
+            image.startswith('squashfs ') and 'ro' in image.split()[1].split(','))
+
+
+def live_media_paths():
+    # bootmnt is deliberately unmounted after copy-to-RAM. Resolve the original
+    # media from Archiso's boot identifiers so that USB is still excluded.
+    paths = set()
+    source = command(['findmnt', '--noheadings', '--raw', '--mountpoint',
+                      '/run/archiso/bootmnt', '--output', 'SOURCE'], allowed=(0, 1)).strip()
+    if source.startswith('/dev/'):
+        paths.add(str(Path(source.split('[')[0]).resolve()))
+    for arg in shlex.split(Path('/proc/cmdline').read_text()):
+        key, _, value = arg.partition('=')
+        tag = {'archisosearchuuid': 'UUID', 'archisolabel': 'LABEL'}.get(key)
+        if tag and value:
+            devices = command(['blkid', '-t', tag + '=' + value, '-o', 'device'], allowed=(0, 2))
+            paths.update(str(Path(p).resolve()) for p in devices.splitlines() if p.startswith('/dev/'))
+        elif key == 'archisodevice' and value.startswith('/dev/'):
+            paths.add(str(Path(value).resolve()))
+    if not paths:
+        raise RuntimeError('Could not identify the live USB. No installation disk is offered; restart with the USB connected.')
+    return paths
+
+
 def read_disks():
-    return eligible_disks(json.loads(command(['lsblk', '--json', '--bytes', '--output', COLUMNS])))
+    excluded = live_media_paths() if live_root() else ()
+    return eligible_disks(json.loads(command(['lsblk', '--json', '--bytes', '--output', COLUMNS])), excluded)
 
 
 def identity(disk):
@@ -63,7 +102,7 @@ def selected_disk(path):
 def live_only():
     if os.geteuid() != 0:
         raise PermissionError('Run this helper through sudo from the live session.')
-    if Path('/etc/hafthios-installed').exists() or not Path('/run/archiso/bootmnt').is_mount():
+    if not live_root():
         raise RuntimeError('Disk installation is available only from the live ISO.')
 
 

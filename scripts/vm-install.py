@@ -114,6 +114,13 @@ def main():
         subprocess.run(['make', '--version'], check=True, timeout=30)
         print('HAFTHIOS_PACKAGE_REPOSITORIES_OK', flush=True)
         backend=runpy.run_path('/usr/local/bin/hafthios-install')
+        # Reproduce physical USB boot: Archiso unmounts bootmnt after copying
+        # the image to RAM. The detached USB must still never be an install target.
+        assert Path('/run/archiso/copytoram').is_mount(), 'USB live root was not copied to RAM'
+        assert not Path('/run/archiso/bootmnt').is_mount(), 'Live media should be unmounted after copy-to-RAM'
+        disks = backend['read_disks']()
+        assert [d['path'] for d in disks] == ['/dev/vda'], disks
+        print('HAFTHIOS_RAM_USB_INSTALL_TEST_OK: live RAM root accepted; original USB excluded', flush=True)
         plan=backend['make_plan']('/dev/vda')
         backend['install']({'token':plan['token'],'confirmation':plan['confirmation'],'password':'testpassword123','settings':{'language':'sv','keyboard':'se'}})
         print('HAFTHIOS_INSTALL_OK', flush=True)
