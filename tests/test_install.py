@@ -74,7 +74,13 @@ class InstallationSafetyTests(unittest.TestCase):
 
     def test_disk_list_fails_closed_when_live_root_is_not_verified(self):
         with patch.dict(backend['read_disks'].__globals__, live_root=lambda: False):
-            with self.assertRaisesRegex(RuntimeError, 'only from the live ISO'):
+            with patch.object(backend['os'], 'geteuid', return_value=0):
+                with self.assertRaisesRegex(RuntimeError, 'only from the live ISO'):
+                    backend['read_disks']()
+
+    def test_disk_list_requires_privileged_helper(self):
+        with patch.object(backend['os'], 'geteuid', return_value=1000):
+            with self.assertRaisesRegex(PermissionError, 'through sudo'):
                 backend['read_disks']()
 
     def test_mounted_live_media_source_is_excluded_without_boot_uuid(self):
