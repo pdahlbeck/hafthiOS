@@ -16,6 +16,20 @@ Client = runpy.run_path(str(SOURCE))['Client']
 
 
 class GreeterTests(unittest.TestCase):
+    def test_resize_waits_for_current_focused_terminal_geometry(self):
+        tree=ast.parse((ROOT/'scripts/test-boot.py').read_text())
+        function=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='focused_terminal_width')
+        namespace={'json':json}
+        exec(compile(ast.Module(body=[function],type_ignores=[]),'<resize focus>','exec'),namespace)
+        width=namespace['focused_terminal_width']
+        def report(focused,size):
+            return 'HAFTHIOS_DESKTOP_READY '+json.dumps([{'app_id':'se.dahlbeck.Hafthi',
+                    'is_focused':focused,'layout':{'window_size':[size,768]}}])
+        self.assertIsNone(width(''))
+        self.assertIsNone(width(report(False,478)))
+        self.assertIsNone(width(report(True,742)+'\n'+report(False,478)))
+        self.assertEqual(width(report(False,478)+'\n'+report(True,742)),742)
+
     def test_vm_keypress_requires_current_window_focus(self):
         tree = ast.parse((ROOT / 'scripts/test-boot.py').read_text())
         function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'window_present')

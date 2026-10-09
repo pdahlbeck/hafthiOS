@@ -81,6 +81,18 @@ def screen_label_present(text, label):
         all(matches(a, b) for a, b in zip(actual[i:i + len(expected)], expected))
         for i in range(len(actual) - len(expected) + 1))
 
+def focused_terminal_width(text):
+    lines=[line for line in text.splitlines() if line.startswith('HAFTHIOS_DESKTOP_READY ')]
+    if not lines:
+        return None
+    try:
+        windows=json.loads(lines[-1].split(' ',1)[1])
+        return next((w['layout']['window_size'][0] for w in windows
+                     if w.get('app_id')=='se.dahlbeck.Hafthi' and w.get('is_focused') is True),None)
+    except (ValueError,KeyError,TypeError):
+        return None
+
+
 def window_present(text, app_id, focused=False):
     for line in reversed(text.splitlines()):
         if line.startswith('HAFTHIOS_DESKTOP_READY '):
@@ -391,13 +403,20 @@ with tempfile.TemporaryDirectory() as tmp:
             capture_screen(sock_path, out / ('panel-hidden.ppm' if hidden else 'panel-open.ppm'))
         # Use the actual focus-ring pixels to locate the terminal client edge.
         # No modifier is held: this verifies Hafthi's native left-button resize.
+        # The reopened layer-shell panel owns keyboard focus. Unmap it and wait
+        # for a fresh focused terminal snapshot before reading its geometry.
+        qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'meta_l'}, {'type': 'qcode', 'data': 'shift'}, {'type': 'qcode', 'data': 'spc'}]})
+        wait_panel(True)
         def terminal_width():
-            lines = [line for line in serial_path.read_text(errors='replace').splitlines()
-                     if line.startswith('HAFTHIOS_DESKTOP_READY ')]
-            windows = json.loads(lines[-1].split(' ', 1)[1])
-            return next(w['layout']['window_size'][0] for w in windows
-                        if w['app_id'] == 'se.dahlbeck.Hafthi' and w['is_focused'])
-        before_width = terminal_width()
+            return focused_terminal_width(serial_path.read_text(errors='replace'))
+        deadline=time.monotonic()+30
+        while time.monotonic()<deadline:
+            before_width=terminal_width()
+            if before_width is not None:
+                break
+            time.sleep(1)
+        else:
+            raise RuntimeError('Hafthi did not regain focus after hiding the panel')
         capture_screen(sock_path, out / 'terminal-before-resize.ppm')
         from PIL import Image
         screen = Image.open(out / 'terminal-before-resize.ppm').convert('RGB')
@@ -424,7 +443,8 @@ with tempfile.TemporaryDirectory() as tmp:
         qmp_request(sock_path, 'input-send-event', {'events': [{'type': 'btn', 'data': {'down': False, 'button': 'left'}}]})
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
-            if abs(terminal_width() - before_width) > 30:
+            after_width=terminal_width()
+            if after_width is not None and abs(after_width - before_width) > 30:
                 break
             time.sleep(1)
         else:
