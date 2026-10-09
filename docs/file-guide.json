@@ -192,7 +192,8 @@
         "The installed desktop omits the installer button; its ready marker reports root filesystem and persistent settings for the VM test.",
         "The desktop uses GTK4 Layer Shell to anchor a single panel to the right edge. Hide panel leaves a small clickable edge tab; Super+Space toggles the same instance. The user's hidden state is saved separately.",
         "Display settings lists Niri's advertised modes and scaling. A trial has a 15-second confirmation countdown plus an independent restore process if the GUI crashes. Only confirmed settings are written.",
-        "Displays the installer backend JSON error when preparing installation fails, rather than hiding the cause behind a subprocess exit status."
+        "Displays the installer backend JSON error when preparing installation fails, rather than hiding the cause behind a subprocess exit status.",
+        "Disk listing and installation planning both run through the privileged installer helper; probing the original USB after RAM boot requires block-device access. Backend errors and sudo failures are shown to the user."
       ]
     },
     {
@@ -206,7 +207,8 @@
       "details": [
         "Checks exclusion of partitions, loop devices, optical media and read-only disks.",
         "Mocks lsblk to check disk size formatting and that only the intended read-only query is executed.",
-        "Checks the empty-disk case. These tests do not validate physical hardware or perform installation."
+        "Checks the empty-disk case. These tests do not validate physical hardware or perform installation.",
+        "Verifies the real installation UI lists disks through sudo and the read-only installer action, preserving JSON backend failures and sudo errors."
       ]
     },
     {

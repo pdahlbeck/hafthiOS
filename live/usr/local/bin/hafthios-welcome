@@ -10,6 +10,20 @@ import threading
 from pathlib import Path
 
 
+def installer_request(action, *arguments):
+    # Disk identity probing needs root even when the request is read-only.
+    # Keep list and plan in the same privileged helper, with the same guards.
+    result = subprocess.run(['sudo', '-n', '/usr/local/bin/hafthios-install', action, *arguments],
+                            capture_output=True, text=True, timeout=10)
+    try:
+        response = json.loads(result.stdout)
+    except ValueError:
+        raise RuntimeError(result.stderr.strip() or 'The installer did not return a valid response.')
+    if result.returncode:
+        raise RuntimeError(response.get('error') or result.stderr.strip() or 'The installer request failed.')
+    return response
+
+
 def eligible_disks(payload):
     return [disk for disk in payload.get('blockdevices', [])
             if disk.get('type') == 'disk' and not disk.get('ro')]
@@ -580,7 +594,7 @@ def main():
                     pass
                 self.disk_status.set_text('Could not read disks: ' + error if error else 'At least 12 GiB required. Back up any files before erasing a disk.')
                 return False
-            self.settings_task(self.installer['read_disks'], finished)
+            self.settings_task(lambda: installer_request('list')['disks'], finished)
 
         def build_review_page(self):
             page = self.page('review', 'Install Hafþi OS', 'Review the disk before erasing it.')
@@ -615,15 +629,7 @@ def main():
             path = self.disks[index]['path']
             self.continue_button.set_sensitive(False)
             def plan():
-                result = subprocess.run(['sudo', '-n', '/usr/local/bin/hafthios-install', 'plan', path],
-                                        capture_output=True, text=True, timeout=10)
-                try:
-                    response = json.loads(result.stdout)
-                except ValueError:
-                    raise RuntimeError(result.stderr.strip() or 'The installer did not return a valid response.')
-                if result.returncode:
-                    raise RuntimeError(response.get('error') or result.stderr.strip() or 'Could not prepare installation.')
-                return response
+                return installer_request('plan', path)
             def finished(plan, error):
                 self.continue_button.set_sensitive(True)
                 if error:
