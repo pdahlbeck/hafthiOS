@@ -314,6 +314,16 @@ with tempfile.TemporaryDirectory() as tmp:
             if 'HAFTHIOS_DISKS_READY ' in text:
                 available = json.loads(text.split('HAFTHIOS_DISKS_READY ')[-1].splitlines()[0])
                 if available != ['/dev/vda']:
+                    # The initial Cage welcome session disables VT switching.
+                    # Enter Niri before using its working text-console shortcut.
+                    qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'f2'}]})
+                    desktop_deadline = time.monotonic() + 180
+                    while time.monotonic() < desktop_deadline:
+                        if 'HAFTHIOS_DESKTOP_READY ' in serial_path.read_text(errors='replace'):
+                            break
+                        time.sleep(2)
+                    else:
+                        raise RuntimeError('Could not start desktop for live USB diagnostics')
                     open_live_console(sock_path, out, serial_path)
                     for diagnostic in ('sudo findmnt --raw --output TARGET,SOURCE,FSTYPE,OPTIONS',
                                        'cat /proc/cmdline',
