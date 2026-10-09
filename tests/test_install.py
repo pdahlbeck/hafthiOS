@@ -95,11 +95,11 @@ class InstallationSafetyTests(unittest.TestCase):
         calls = []
         namespace['qmp_request'] = lambda _socket, name, args: calls.append((name, args))
         exec(compile(ast.Module(body=[function], type_ignores=[]), '<console test>', 'exec'), namespace)
-        command = 'echo Q+/== | base64 -d | sudo python3 > /dev/ttyS0 2>&1'
+        command = 'echo Q+/== | base64 -d | sudo python3 > /dev/ttyS0 2>&1' + ' findmnt --output TARGET,SOURCE,FSTYPE,OPTIONS'
         namespace['type_text']('mock-socket', command)
         typed = []
         shifted = {'7':'&', 'equal':'+', 'backslash':'|', 'dot':'>', 'minus':'_'}
-        plain = {'spc':' ', 'equal':'=', 'backslash':'\\', 'dot':'.', 'minus':'-', 'slash':'/'}
+        plain = {'comma':',', 'spc':' ', 'equal':'=', 'backslash':'\\', 'dot':'.', 'minus':'-', 'slash':'/'}
         self.assertTrue(all(not e['data']['down'] for e in calls[0][1]['events']))
         for name, args in calls[1:]:
             self.assertEqual(name, 'send-key')
