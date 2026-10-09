@@ -55,6 +55,7 @@ SWEDISH = {
     'A quiet coast that grows over time.': 'En stillsam kust som växer med tiden.',
     'CPU activity brings more villagers to work. Network traffic brings trade. Temperature changes the light when a CPU sensor is available.': 'Processoraktivitet sätter fler bybor i arbete. Nätverkstrafik ger handel. Temperaturen påverkar ljuset när en processorsensor finns.',
     'Display settings': 'Skärminställningar',
+    'Programs': 'Program',
     'Hide panel': 'Dölj panelen',
     'Open panel': 'Öppna panelen',
     'Display': 'Skärm',
@@ -109,7 +110,7 @@ SWEDISH = {
     'Check graphics acceleration in your VM. In UTM, choose virtio-vga-gl (GPU Supported), then fully restart the VM.': 'Kontrollera grafikaccelerationen i din VM. I UTM väljer du virtio-vga-gl (GPU Supported) och startar sedan om VM:n helt.',
     'Try again': 'Försök igen',
     'Diagnostics are saved in ~/.local/state/hafthios/desktop-error.log.': 'Felinformation finns i ~/.local/state/hafthios/desktop-error.log.',
-    'Super + Enter  ·  Terminal\nSuper + B  ·  Browser\nSuper + G  ·  File guide\nSuper + ← / →  ·  Switch windows\nSuper + Q  ·  Close window': 'Super + Enter  ·  Terminal\nSuper + B  ·  Webbläsare\nSuper + G  ·  Filguide\nSuper + ← / →  ·  Byt fönster\nSuper + Q  ·  Stäng fönster',
+    'Super + Space  ·  Programs\nSuper + Shift + Space  ·  Panel\nSuper + Enter  ·  Terminal\nSuper + B  ·  Browser\nSuper + G  ·  File guide\nSuper + ← / →  ·  Switch windows\nSuper + Q  ·  Close window': 'Super + Space  ·  Program\nSuper + Shift + Space  ·  Panel\nSuper + Enter  ·  Terminal\nSuper + B  ·  Webbläsare\nSuper + G  ·  Filguide\nSuper + ← / →  ·  Byt fönster\nSuper + Q  ·  Stäng fönster',
 }
 
 
@@ -336,6 +337,9 @@ def main():
         def build_desktop(self):
             page = self.page('desktop', 'Welcome aboard.', 'Your Hafþi OS live desktop.')
             page.set_spacing(12)
+            programs = self.button('Programs', lambda _: subprocess.Popen(['hafthios-launcher']))
+            programs.set_tooltip_text('Super + Space')
+            page.append(programs)
             page.append(self.button('Open Hafþi', lambda _: subprocess.Popen(['hafthios-terminal']), True))
             page.append(self.button('Open Google Chrome', lambda _: subprocess.Popen(['hafthios-chrome'])))
             page.append(self.button('Hafþi OS Guide', self.show_guide))
@@ -345,7 +349,7 @@ def main():
             page.append(self.button('Display settings', self.show_display))
             page.append(self.button('Living village', self.show_world))
             page.append(self.button('Network settings', self.network))
-            page.append(self.label('Super + Enter  ·  Terminal\nSuper + B  ·  Browser\nSuper + G  ·  File guide\nSuper + ← / →  ·  Switch windows\nSuper + Q  ·  Close window', 'notice'))
+            page.append(self.label('Super + Space  ·  Programs\nSuper + Shift + Space  ·  Panel\nSuper + Enter  ·  Terminal\nSuper + B  ·  Browser\nSuper + G  ·  File guide\nSuper + ← / →  ·  Switch windows\nSuper + Q  ·  Close window', 'notice'))
             page.append(self.button('Restart', self.restart))
 
         def desktop_ready(self):

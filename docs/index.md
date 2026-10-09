@@ -45,8 +45,12 @@ Choose **Project source guide** for the separate, detailed source explanations a
 The installer enables greetd on tty1 after Plymouth, with an unprivileged Cage/gtkgreet login screen. PAM checks the installation password before `hafthios-installed-session` loads saved user settings and starts Niri. Live media keep the trial/install welcome screen. Other TTYs remain available for recovery.
 
 The Niri desktop controls are a GTK4 Layer Shell panel anchored to the right edge.
-Hide panel leaves an edge tab; Super+Space toggles it and Super+D opens display
+Hide panel leaves an edge tab; Super+Shift+Space toggles it and Super+D opens display
 settings. Advertised output modes and scaling come from Niri IPC. A 15-second
 confirmation and independent restore watchdog protect display trials. Confirmed
 modes are written to the validated user Niri configuration and survive language
 changes. Panel visibility and display modes are saved separately from language.
+
+## Programs
+
+Super+Space opens native GTK program search. Installed desktop entries appear automatically; recent programs are shown first when the query is empty. Enter opens the selected result, arrows select and Escape dismisses. Hafthi can be resized horizontally by dragging its left or right edge.

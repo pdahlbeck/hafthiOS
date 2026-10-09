@@ -9,6 +9,8 @@ git -C "$workspace" init -q
 git -C "$workspace" remote add origin https://github.com/pdahlbeck/hafthi.git
 git -C "$workspace" fetch --depth=1 origin "$revision"
 git -C "$workspace" checkout --detach FETCH_HEAD
+patch_file=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/hafthi-edge-resize.patch
+git -C "$workspace" apply --recount "$patch_file"
 (cd "$workspace" && cargo build --release)
 install -Dm755 "$workspace/target/release/hafthi" "$destination/usr/local/bin/hafthi"
 install -Dm755 "$workspace/scripts/g" "$destination/usr/local/libexec/hafthi/g"

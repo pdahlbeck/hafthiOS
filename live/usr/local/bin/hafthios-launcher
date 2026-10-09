@@ -1,0 +1,229 @@
+#!/usr/bin/env python3
+"""Small on-demand program launcher; desktop entries are launched through Gio."""
+import json
+import os
+from pathlib import Path
+import sys
+import unicodedata
+
+
+def folded(value):
+    return ''.join(c for c in unicodedata.normalize('NFKD', value.casefold())
+                   if not unicodedata.combining(c))
+
+
+def ranked_apps(apps, query, recent):
+    words = folded(query).split()
+    order = {app_id: index for index, app_id in enumerate(recent)}
+    matches = []
+    for app in apps:
+        name = folded(app['name'])
+        search = folded(app['search'])
+        if not all(word in search for word in words):
+            continue
+        score = (0 if name == folded(query).strip() else
+                 1 if name.startswith(folded(query).strip()) else
+                 2 if all(any(part.startswith(word) for part in name.split()) for word in words) else 3)
+        matches.append((score if words else 0, order.get(app['id'], 999), name, app))
+    return [item[-1] for item in sorted(matches, key=lambda item: item[:3])[:5]]
+
+
+def read_recent(path):
+    try:
+        value = json.loads(path.read_text())
+        return [item for item in value if isinstance(item, str)][:20] if isinstance(value, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def save_recent(path, recent, app_id):
+    updated = [app_id] + [item for item in recent if item != app_id]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix('.tmp')
+    temporary.write_text(json.dumps(updated[:20]) + '\n')
+    temporary.replace(path)
+    return updated[:20]
+
+
+def main():
+    # Load layer-shell before GTK initializes its Wayland backend.
+    preview = '--preview' in sys.argv
+    if not preview:
+        from ctypes import CDLL
+        CDLL('libgtk4-layer-shell.so')
+    import gi
+    gi.require_version('Gtk', '4.0')
+    from gi.repository import Gtk, Gdk, Gio, GLib
+    if not preview:
+        gi.require_version('Gtk4LayerShell', '1.0')
+        from gi.repository import Gtk4LayerShell as Layer
+
+    class Launcher(Gtk.Application):
+        def __init__(self):
+            super().__init__(application_id='org.hafthios.Launcher',
+                             flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
+            self.window = None
+            self.recent_path = Path.home() / '.local/state/hafthios/launcher.json'
+            self.recent = read_recent(self.recent_path) or ['hafthios-terminal.desktop', 'hafthios-chrome.desktop']
+            self.apps = []
+            self.matches = []
+            self.swedish = os.environ.get('LANG', '').startswith('sv')
+
+        def text(self, en, sv):
+            return sv if self.swedish else en
+
+        def do_command_line(self, command):
+            if self.window:
+                self.quit()
+            else:
+                self.activate()
+            return 0
+
+        def do_activate(self):
+            self.apps = []
+            for info in Gio.AppInfo.get_all():
+                if not info.should_show() or not info.get_id():
+                    continue
+                keywords = info.get_keywords() if hasattr(info, 'get_keywords') else []
+                name = info.get_display_name()
+                self.apps.append({'id': info.get_id(), 'name': name, 'info': info,
+                                  'search': ' '.join([name, info.get_id(), info.get_description() or '', *(keywords or [])])})
+            css = Gtk.CssProvider()
+            css.load_from_data(b'''
+                window { background: transparent; }
+                .shade { background: rgba(6, 15, 22, 0.32); }
+                .launcher { background: #101e28; color: #ecf4f5; border: 1px solid #538f92;
+                            border-radius: 14px; padding: 20px; }
+                .launcher entry { background: #172c37; color: #ecf4f5; font-size: 22px;
+                                  padding: 10px; border: none; box-shadow: none; }
+                .launcher list { background: transparent; color: #ecf4f5; }
+                .launcher row { border-radius: 8px; padding: 10px; }
+                .launcher row:selected { background: #294650; }
+                .hint { color: #9cb3be; font-size: 12px; }
+            ''')
+            Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css,
+                                                     Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+            self.window = Gtk.ApplicationWindow(application=self, title=self.text('Programs', 'Program'))
+            self.window.set_decorated(False)
+            if preview:
+                self.window.set_default_size(960, 640)
+            else:
+                Layer.init_for_window(self.window)
+                Layer.set_namespace(self.window, 'hafthios-launcher')
+                Layer.set_layer(self.window, Layer.Layer.OVERLAY)
+                Layer.set_keyboard_mode(self.window, Layer.KeyboardMode.EXCLUSIVE)
+                for edge in (Layer.Edge.LEFT, Layer.Edge.RIGHT, Layer.Edge.TOP, Layer.Edge.BOTTOM):
+                    Layer.set_anchor(self.window, edge, True)
+                Layer.set_exclusive_zone(self.window, 0)
+            overlay = Gtk.Overlay()
+            shade = Gtk.Box()
+            shade.add_css_class('shade')
+            dismiss = Gtk.GestureClick()
+            dismiss.connect('released', lambda *_: self.quit())
+            shade.add_controller(dismiss)
+            overlay.set_child(shade)
+            card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+            card.add_css_class('launcher')
+            card.set_size_request(480, -1)
+            card.set_halign(Gtk.Align.CENTER)
+            card.set_valign(Gtk.Align.CENTER)
+            card.set_margin_start(16)
+            card.set_margin_end(16)
+            self.entry = Gtk.Entry(placeholder_text=self.text('Open a program…', 'Öppna ett program…'))
+            self.entry.connect('changed', lambda *_: self.refresh())
+            self.entry.connect('activate', lambda *_: self.launch_selected())
+            card.append(self.entry)
+            self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
+            self.list.set_activate_on_single_click(True)
+            self.list.connect('row-activated', lambda *_: self.launch_selected())
+            card.append(self.list)
+            self.status = Gtk.Label(xalign=0)
+            self.status.add_css_class('hint')
+            card.append(self.status)
+            hint = Gtk.Label(label=self.text('↑ ↓ Choose   ·   Enter Open   ·   Esc Close',
+                                            '↑ ↓ Välj   ·   Enter Öppna   ·   Esc Stäng'), xalign=0)
+            hint.add_css_class('hint')
+            card.append(hint)
+            overlay.add_overlay(card)
+            self.window.set_child(overlay)
+            keys = Gtk.EventControllerKey()
+            keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+            keys.connect('key-pressed', self.key)
+            self.window.add_controller(keys)
+            self.refresh()
+            self.window.present()
+            self.entry.grab_focus()
+            self.marker('HAFTHIOS_LAUNCHER_READY', {'apps': len(self.apps)})
+
+        def marker(self, name, value):
+            runtime = Path(os.environ.get('XDG_RUNTIME_DIR', '/tmp'))
+            try:
+                (runtime / 'hafthios-launcher.json').write_text(json.dumps(value))
+                with open('/dev/ttyS0', 'w') as serial:
+                    serial.write(name + ' ' + json.dumps(value) + '\n')
+            except OSError:
+                pass
+
+        def refresh(self):
+            child = self.list.get_first_child()
+            while child:
+                following = child.get_next_sibling()
+                self.list.remove(child)
+                child = following
+            self.matches = ranked_apps(self.apps, self.entry.get_text(), self.recent)
+            for app in self.matches:
+                line = Gtk.Box(spacing=12)
+                icon = app['info'].get_icon()
+                image = Gtk.Image.new_from_gicon(icon) if icon else Gtk.Image.new_from_icon_name('application-x-executable')
+                image.set_pixel_size(24)
+                line.append(image)
+                label = Gtk.Label(label=app['name'], xalign=0)
+                label.set_hexpand(True)
+                label.set_ellipsize(3)
+                line.append(label)
+                self.list.append(line)
+            self.list.select_row(self.list.get_row_at_index(0))
+            self.status.set_text('' if self.matches else self.text('No programs found', 'Inga program hittades'))
+
+        def key(self, controller, keyval, keycode, state):
+            if keyval == Gdk.KEY_Escape:
+                self.quit()
+                return True
+            if keyval in (Gdk.KEY_Up, Gdk.KEY_Down, Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab) and self.matches:
+                row = self.list.get_selected_row()
+                index = row.get_index() if row else 0
+                delta = -1 if keyval in (Gdk.KEY_Up, Gdk.KEY_ISO_Left_Tab) else 1
+                self.list.select_row(self.list.get_row_at_index((index + delta) % len(self.matches)))
+                return True
+            return False
+
+        def launch_selected(self):
+            row = self.list.get_selected_row()
+            if not row:
+                return
+            app = self.matches[row.get_index()]
+            try:
+                context = Gdk.Display.get_default().get_app_launch_context()
+                self.window.hide()
+                if not app['info'].launch([], context):
+                    raise RuntimeError('Launch rejected')
+            except GLib.Error as error:
+                self.window.present()
+                self.status.set_text(self.text('Could not open program: ', 'Kunde inte öppna programmet: ') + str(error))
+                return
+            except RuntimeError:
+                self.window.present()
+                self.status.set_text(self.text('Could not open program', 'Kunde inte öppna programmet'))
+                return
+            try:
+                self.recent = save_recent(self.recent_path, self.recent, app['id'])
+            except OSError:
+                pass
+            self.marker('HAFTHIOS_LAUNCHER_OPENED', {'id': app['id']})
+            self.quit()
+
+    Launcher().run([sys.argv[0]])
+
+
+if __name__ == '__main__':
+    main()

@@ -32,6 +32,8 @@ file_permissions+=(
   ["/etc/sudoers.d/hafthios-live"]="0:0:440"
   ["/usr/local/bin/hafthios-session"]="0:0:755"
   ["/usr/local/bin/hafthios-welcome"]="0:0:755"
+  ["/usr/local/bin/hafthios-update"]="0:0:755"
+  ["/usr/local/bin/hafthios-launcher"]="0:0:755"
   ["/usr/local/bin/hafthios-world"]="0:0:755"
 )
 PROFILE
@@ -101,6 +103,7 @@ mkdir -p "$workspace/work/iso"
 touch "$workspace/work/iso/hafthios-file-register.sqlite"
 mkarchiso -v -w "$workspace/work" -o "$root/out" "$profile"
 python3 "$root/scripts/package-inventory.py" "$workspace" "$root"
+python3 "$root/scripts/build-update.py" "$profile/airootfs" "$root/out"
 
 python3 - "$root/out" <<'PY'
 import hashlib, pathlib, sys

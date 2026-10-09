@@ -1,0 +1,221 @@
+#!/usr/bin/env python3
+"""Update Hafthi-owned desktop files from a VM-verified GitHub release."""
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path, PurePosixPath
+import platform
+import pwd
+import shutil
+import subprocess
+import tarfile
+import tempfile
+import time
+import urllib.request
+
+REPO = 'pdahlbeck/hafthiOS'
+STATE = Path('/var/lib/hafthios-updater')
+MAX_ARCHIVE = 180 * 1024**2
+TOOLS = {'hafthi', 'hafthios-launcher', 'hafthios-update', 'hafthios-welcome',
+         'hafthios-world', 'hafthios-settings', 'hafthios-terminal',
+         'hafthios-chrome', 'hafthios-greeter', 'hafthios-installed-session'}
+
+
+def allowed_path(value):
+    path = PurePosixPath(value)
+    if path.is_absolute() or '..' in path.parts or str(path) != value:
+        return False
+    return (value in {'etc/niri/config.kdl', 'usr/local/libexec/hafthi/g'} or
+            (path.parent.as_posix() == 'usr/local/bin' and path.name in TOOLS) or
+            value in {'usr/share/applications/hafthios-terminal.desktop',
+                      'usr/share/applications/hafthios-chrome.desktop',
+                      'usr/share/plymouth/themes/hafthios/ship.png'} or
+            value.startswith('usr/share/doc/hafthios/'))
+
+
+def fetch(url, limit):
+    request = urllib.request.Request(url, headers={'User-Agent': 'HafthiOS-Updater', 'Accept': 'application/vnd.github+json'})
+    with urllib.request.urlopen(request, timeout=90) as response:
+        data = response.read(limit + 1)
+    if len(data) > limit:
+        raise RuntimeError('Update download exceeds its size limit')
+    return data
+
+
+def verified_release():
+    release = json.loads(fetch(f'https://api.github.com/repos/{REPO}/releases/latest', 1024**2))
+    assets = {asset['name']: asset for asset in release['assets']}
+    required = ('hafthios-update.tar.gz', 'hafthios-update.sha256', 'hafthios-update.json')
+    if not all(name in assets for name in required):
+        raise RuntimeError('No complete desktop update is published yet')
+    meta = json.loads(fetch(assets['hafthios-update.json']['browser_download_url'], 1024**2))
+    run = json.loads(fetch(f'https://api.github.com/repos/{REPO}/actions/runs/{int(meta["run_id"])}', 1024**2))
+    if (run.get('status') != 'completed' or run.get('conclusion') != 'success' or
+            run.get('head_sha') != meta['revision'] or run.get('head_branch') != 'main'):
+        raise RuntimeError('The published update has not passed its full VM run')
+    return meta, assets
+
+
+def unpack_verified(archive, destination):
+    with tarfile.open(archive, 'r:gz') as tar:
+        members = tar.getmembers()
+        if sum(member.size for member in members) > 350 * 1024**2:
+            raise RuntimeError('Expanded update exceeds its size limit')
+        names = [member.name for member in members]
+        if len(names) != len(set(names)):
+            raise RuntimeError('Duplicate update archive entries')
+        for member in members:
+            if not member.isfile() or (member.name != 'manifest.json' and not
+                    (member.name.startswith('payload/') and allowed_path(member.name[8:]))):
+                raise RuntimeError('Unsafe update archive entry: ' + member.name)
+        manifest_member = tar.getmember('manifest.json')
+        if manifest_member.size > 2 * 1024**2:
+            raise RuntimeError('Oversized update manifest')
+        manifest = json.load(tar.extractfile(manifest_member))
+        files = manifest['files']
+        if len(files) != len({item['path'] for item in files}):
+            raise RuntimeError('Duplicate update manifest paths')
+        if set(names) != {'manifest.json'} | {'payload/' + item['path'] for item in files}:
+            raise RuntimeError('Update manifest does not match archive contents')
+        for item in files:
+            if not allowed_path(item['path']) or item['mode'] not in (0o644, 0o755):
+                raise RuntimeError('Invalid update destination or permissions')
+            data = tar.extractfile('payload/' + item['path']).read()
+            if hashlib.sha256(data).hexdigest() != item['sha256']:
+                raise RuntimeError('Update file checksum mismatch: ' + item['path'])
+            target = destination / item['path']
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            target.chmod(item['mode'])
+    return manifest
+
+
+def atomic_copy(source, target, mode, uid=0, gid=0):
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as stream:
+        temporary = Path(stream.name)
+        try:
+            with source.open('rb') as original:
+                shutil.copyfileobj(original, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+            os.chmod(temporary, mode)
+            os.chown(temporary, uid, gid)
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
+def apply_payload(payload, manifest, root, backup, extra_paths=()):
+    paths = [root / item['path'] for item in manifest['files']] + list(extra_paths)
+    records = []
+    backup.mkdir(parents=True, mode=0o700)
+    for index, target in enumerate(paths):
+        # Root-owned program paths must not redirect writes into another tree.
+        if target.is_symlink() or any(parent.is_symlink() for parent in target.parents if parent != root):
+            raise RuntimeError('Refusing an update through a symlink: ' + str(target))
+        record = {'target': str(target), 'exists': target.exists(), 'backup': str(index)}
+        if record['exists']:
+            info = target.stat()
+            if not target.is_file():
+                raise RuntimeError('Update destination is not a file')
+            shutil.copyfile(target, backup / str(index))
+            record.update(mode=info.st_mode & 0o777, uid=info.st_uid, gid=info.st_gid)
+        records.append(record)
+    (backup / 'receipt.json').write_text(json.dumps(records))
+    try:
+        for item in manifest['files']:
+            atomic_copy(payload / item['path'], root / item['path'], item['mode'])
+    except BaseException:
+        restore(backup)
+        raise
+
+
+def restore(backup):
+    for record in json.loads((backup / 'receipt.json').read_text()):
+        target = Path(record['target'])
+        if record['exists']:
+            atomic_copy(backup / record['backup'], target, record['mode'], record['uid'], record['gid'])
+        else:
+            target.unlink(missing_ok=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--check', action='store_true')
+    parser.add_argument('--rollback', action='store_true')
+    parser.add_argument('--package', type=Path, help='Install a locally downloaded update archive')
+    args = parser.parse_args()
+    if os.geteuid() != 0 or not Path('/etc/hafthios-installed').exists():
+        raise RuntimeError('Run sudo hafthios-update on an installed Hafthi OS system')
+    if platform.machine() != 'x86_64':
+        raise RuntimeError('This update supports x86_64 systems')
+    STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with (STATE / 'lock').open('w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        current_path = STATE / 'current.json'
+        if args.rollback:
+            if not current_path.exists():
+                raise RuntimeError('No previous desktop update to restore')
+            current = json.loads(current_path.read_text())
+            restore(STATE / 'backups' / current['backup'])
+            print('Previous desktop version restored. Log out and log back in.')
+            return
+        meta = None
+        if not args.package:
+            meta, assets = verified_release()
+            if current_path.exists() and json.loads(current_path.read_text())['revision'] == meta['revision']:
+                print('Hafthi OS desktop is already up to date.')
+                return
+            if args.check:
+                print('Verified desktop update available: ' + meta['revision'][:12])
+                return
+        elif args.check:
+            raise RuntimeError('--check cannot be combined with --package')
+        with tempfile.TemporaryDirectory(prefix='hafthios-update-') as temporary:
+            temporary = Path(temporary)
+            archive = args.package
+            if archive is None:
+                archive = temporary / 'update.tar.gz'
+                data = fetch(assets['hafthios-update.tar.gz']['browser_download_url'], MAX_ARCHIVE)
+                expected = fetch(assets['hafthios-update.sha256']['browser_download_url'], 4096).decode().split()[0]
+                if hashlib.sha256(data).hexdigest() != expected:
+                    raise RuntimeError('Update archive checksum mismatch')
+                archive.write_bytes(data)
+            payload = temporary / 'payload'
+            manifest = unpack_verified(archive, payload)
+            if meta and (manifest['revision'] != meta['revision'] or manifest['run_id'] != meta['run_id']):
+                raise RuntimeError('Published revision does not match update archive')
+            if manifest.get('format') != 1 or manifest.get('architecture') != 'x86_64':
+                raise RuntimeError('Unsupported update package format')
+            account = pwd.getpwnam(os.environ.get('SUDO_USER') or 'hafthi')
+            if account.pw_uid == 0:
+                raise RuntimeError('Desktop settings require a non-root user')
+            home = Path(account.pw_dir)
+            user_files = [home / '.config/niri/config.kdl', home / '.config/hafthios/environment',
+                          home / '.config/hafthios/settings.json', current_path]
+            backup_name = str(time.time_ns())
+            backup = STATE / 'backups' / backup_name
+            apply_payload(payload, manifest, Path('/'), backup, user_files)
+            try:
+                settings_path = home / '.config/hafthios/settings.json'
+                settings = json.loads(settings_path.read_text()) if settings_path.exists() else {'language':'en','keyboard':'us'}
+                subprocess.run(['runuser', '-u', account.pw_name, '--', 'env', 'HOME=' + str(home),
+                                '/usr/local/bin/hafthios-settings', '--language', settings['language'],
+                                '--keyboard', settings['keyboard']], check=True, timeout=30)
+                current_path.write_text(json.dumps({'revision': manifest['revision'], 'backup': backup_name}) + '\n')
+            except BaseException:
+                restore(backup)
+                raise
+            print('Hafthi OS desktop updated. Your files, password and village are preserved.')
+            print('Log out and log back in to load the new terminal and panel.')
+            print('To restore the previous version: sudo hafthios-update --rollback')
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception as error:
+        raise SystemExit('Update stopped: ' + str(error))

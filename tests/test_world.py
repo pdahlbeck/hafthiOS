@@ -9,6 +9,28 @@ world = runpy.run_path(str(ROOT / 'live/usr/local/bin/hafthios-world'))
 
 
 class VillageTests(unittest.TestCase):
+    def test_food_delivery_supper_and_night_have_continuous_routes(self):
+        actors=world['daily_actors']
+        self.assertEqual(actors(400)[1]['action'],'fish-carry')
+        self.assertEqual(actors(500)[1]['action'],'clean-fish')
+        self.assertEqual(actors(500)[2]['action'],'cook')
+        self.assertEqual(actors(800)[2]['action'],'bake')
+        self.assertTrue(all(a['action']=='eat' for a in actors(1100)))
+        self.assertTrue(all(not a['visible'] for a in actors(1500)))
+        actions=set()
+        import math
+        previous=actors(0)
+        for tick in range(1,7201):
+            current=actors(tick*.5)
+            for before,after in zip(previous,current):
+                self.assertLess(math.dist(before['position'],after['position']),8)
+                actions.add(after['action'])
+            previous=current
+        self.assertTrue({'sow','harvest','sack','net','weave','roof','herd','sit','talk','eat'}<=actions)
+        self.assertEqual(world['evening_light'](0),0)
+        self.assertGreater(world['evening_light'](1400),.9)
+        self.assertAlmostEqual(world['evening_light'](1799.999),world['evening_light'](1800.001),places=4)
+
     def test_connected_deliveries_precede_smithing_shipwork_and_trade_departure(self):
         actors=world['connected_actors']
         self.assertEqual(actors(139)[0]['action'],'handoff')

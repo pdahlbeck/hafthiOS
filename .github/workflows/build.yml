@@ -20,9 +20,17 @@ jobs:
       - name: Render coastal greeter before building
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends python3-gi python3-gi-cairo gir1.2-gtk-3.0 python3-pil xvfb xauth xdotool
+          sudo apt-get install -y --no-install-recommends python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-gtk-4.0 python3-pil xvfb xauth xdotool
           xvfb-run -a -s "-screen 0 1440x900x24" python3 scripts/preview-greeter.py
           python3 scripts/preview-world.py
+          xvfb-run -a -s "-screen 0 960x640x24" python3 scripts/preview-launcher.py
+      - name: Upload launcher review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hafthiOS-launcher
+          path: out/launcher.*
+          retention-days: 14
       - name: Upload living village review
         if: always()
         uses: actions/upload-artifact@v4
@@ -64,6 +72,9 @@ jobs:
           path: pacman-install-test.log
           retention-days: 14
   iso:
+    permissions:
+      contents: write
+      actions: read
     needs: [packages, greeter]
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -72,7 +83,7 @@ jobs:
       - name: Check prototype
         run: |
           python3 -m unittest discover -s tests -v
-          python3 -m py_compile live/usr/local/bin/hafthios-welcome live/usr/local/bin/hafthios-greeter live/usr/local/bin/hafthios-world
+          python3 -m py_compile live/usr/local/bin/hafthios-welcome live/usr/local/bin/hafthios-greeter live/usr/local/bin/hafthios-world live/usr/local/bin/hafthios-launcher live/usr/local/bin/hafthios-update
           bash -n scripts/build-iso.sh live/usr/local/bin/hafthios-session live/usr/local/bin/hafthios-installed-session live/root/.bash_profile
       - name: Select existing ISO for test-only changes
         id: source_iso
@@ -114,7 +125,7 @@ jobs:
         if: steps.source_iso.outputs.run_id == ''
         run: |
           docker run --rm --privileged \
-            -v "$PWD:/project" -w /project archlinux:base \
+            -v "$PWD:/project" -w /project -e GITHUB_SHA -e GITHUB_RUN_ID archlinux:base \
             bash -lc 'pacman -Syu --noconfirm archiso grub python mtools mkinitcpio rust git pkgconf wayland libxkbcommon systemd-libs alsa-lib && bash scripts/build-iso.sh'
           sudo chown -R "$(id -u):$(id -g)" out
       - name: Boot graphical prototype in a disposable VM
@@ -125,6 +136,34 @@ jobs:
           sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-system-gui xorriso python3-pil ovmf tesseract-ocr xvfb xauth xdotool libgl1-mesa-dri mesa-utils
           if [[ -e /dev/kvm ]]; then sudo chmod 666 /dev/kvm; fi
           LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1920x1200x24" python3 scripts/test-boot.py
+      - name: Publish VM-verified desktop update
+        if: steps.source_iso.outputs.run_id == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="hafthios-${GITHUB_SHA:0:12}"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          Path('out/update-release-notes.md').write_text(
+              'Hafthi OS desktop update. The full ISO/VM job passed before publication.\n\n'
+              'Verification run: https://github.com/pdahlbeck/hafthiOS/actions/runs/' + os.environ['GITHUB_RUN_ID'] + '\n'
+              'Install with sudo hafthios-update. Log out and back in afterwards.\n')
+          PY
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" out/hafthios-update.tar.gz out/hafthios-update.sha256 out/hafthios-update.json --clobber
+            gh release edit "$tag" --notes-file out/update-release-notes.md --latest
+          else
+            gh release create "$tag" out/hafthios-update.tar.gz out/hafthios-update.sha256 out/hafthios-update.json \
+              --target "$GITHUB_SHA" --title "Hafthi OS desktop ${GITHUB_SHA:0:12}" --notes-file out/update-release-notes.md --latest
+          fi
+      - name: Upload desktop update
+        if: always() && steps.source_iso.outputs.run_id == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: hafthiOS-update
+          path: out/hafthios-update.*
+          retention-days: 14
       - name: Report ISO size
         run: cat out/size.txt
       - name: Upload complete file register
@@ -150,6 +189,8 @@ jobs:
             out/guide-screen.ppm
             out/settings-screen.ppm
             out/desktop-screen.ppm
+            out/launcher-screen.ppm
+            out/terminal-*-resize.ppm
             out/panel-*.ppm
             out/display-settings.ppm
             out/chrome-screen.ppm
@@ -179,6 +220,8 @@ jobs:
             out/guide-screen.ppm
             out/settings-screen.ppm
             out/desktop-screen.ppm
+            out/launcher-screen.ppm
+            out/terminal-*-resize.ppm
             out/chrome-screen.ppm
             out/boot-serial.log
             out/qemu.log

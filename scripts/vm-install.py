@@ -5,6 +5,54 @@ import sys
 import traceback
 
 
+def test_update():
+    """Exercise the shipped command on the newly installed disposable disk."""
+    from pathlib import Path
+    import shutil, subprocess, tempfile, json
+    archive=Path(__file__).resolve().with_name('update.tar.gz')
+    if not archive.exists():
+        return  # A reused older ISO has no newly built update package.
+    with tempfile.TemporaryDirectory(prefix='update-vm-') as temporary:
+        root=Path(temporary)
+        subprocess.run(['mount','/dev/vda3',str(root)],check=True,timeout=30)
+        try:
+            shutil.copyfile(archive,root/'tmp/hafthios-test-update.tar.gz')
+            launcher=root/'usr/local/bin/hafthios-launcher'
+            old=b'#!/bin/sh\n# previous desktop fixture\nexit 0\n'
+            launcher.write_bytes(old)
+            launcher.chmod(0o755)
+            home=root/'home/hafthi'
+            personal=home/'Documents/update-preservation-test.txt'
+            personal.parent.mkdir(exist_ok=True)
+            personal.write_text('keep my personal file\n')
+            prefs=home/'.config/hafthios/settings.json'
+            saved=prefs.read_bytes()
+            village=home/'.config/hafthios/world.json'
+            age=village.read_bytes() if village.exists() else None
+            def command(*args):
+                subprocess.run(['arch-chroot',str(root),'env','SUDO_USER=hafthi',
+                                '/usr/local/bin/hafthios-update',*args],check=True,timeout=120)
+            def preserved():
+                assert personal.read_text()=='keep my personal file\n'
+                assert json.loads(prefs.read_bytes())==json.loads(saved)
+                assert (village.read_bytes() if village.exists() else None)==age
+            command('--package','/tmp/hafthios-test-update.tar.gz')
+            assert launcher.read_bytes()!=old
+            assert 'hafthios-launcher' in (home/'.config/niri/config.kdl').read_text()
+            preserved()
+            command('--rollback')
+            assert launcher.read_bytes()==old
+            preserved()
+            command('--package','/tmp/hafthios-test-update.tar.gz')
+            assert launcher.read_bytes()!=old
+            preserved()
+            personal.unlink()
+            (root/'tmp/hafthios-test-update.tar.gz').unlink()
+            print('HAFTHIOS_UPDATE_TEST_OK: installed update, settings, personal files, village age and rollback',flush=True)
+        finally:
+            subprocess.run(['umount','-R',str(root)],check=True,timeout=30)
+
+
 def test_display():
     import runpy, time
     backend = runpy.run_path('/usr/local/bin/hafthios-settings')
@@ -123,6 +171,7 @@ def main():
         print('HAFTHIOS_RAM_USB_INSTALL_TEST_OK: live RAM root accepted; original USB excluded', flush=True)
         plan=backend['make_plan']('/dev/vda')
         backend['install']({'token':plan['token'],'confirmation':plan['confirmation'],'password':'testpassword123','settings':{'language':'sv','keyboard':'se'}})
+        test_update()
         print('HAFTHIOS_INSTALL_OK', flush=True)
     except Exception:
         traceback.print_exc()

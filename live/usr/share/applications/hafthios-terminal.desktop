@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Hafþi
+GenericName=Terminal
+GenericName[sv]=Terminal
+Comment=Open the Hafthi terminal
+Comment[sv]=Öppna Hafthi-terminalen
+Exec=hafthios-terminal
+Icon=utilities-terminal
+Terminal=false
+Categories=System;TerminalEmulator;
+Keywords=hafthi;terminal;shell;

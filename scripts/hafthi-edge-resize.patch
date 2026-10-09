@@ -1,0 +1,46 @@
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -40,7 +40,7 @@ use winit::{
+     event_loop::{ControlFlow, EventLoopBuilder},
+     keyboard::{Key, ModifiersState, NamedKey},
+-    window::{Window, WindowBuilder},
++    window::{CursorIcon, ResizeDirection, Window, WindowBuilder},
+ };
+@@ -2300,5 +2300,16 @@
+                 WindowEvent::CursorMoved { position, .. } => {
+                     mouse_pos = position;
++                    if !ghost_target {
++                        let edge = 6.0 * window.scale_factor();
++                        let width = window.inner_size().width as f64;
++                        let on_edge = !preferences.visible && !context_menu.visible
++                            && (position.x < edge || position.x >= width - edge);
++                        window.set_cursor_icon(if on_edge {
++                            CursorIcon::EwResize
++                        } else {
++                            CursorIcon::Default
++                        });
++                    }
+ 
+                     if preferences.visible {
+@@ -2350,6 +2350,21 @@
+                     button: MouseButton::Left,
+                     ..
+                 } => {
+                     if ghost_target { return; }
++                    if state == ElementState::Pressed && !preferences.visible && !context_menu.visible {
++                        let edge = 6.0 * window.scale_factor();
++                        let width = window.inner_size().width as f64;
++                        let direction = if mouse_pos.x < edge {
++                            Some(ResizeDirection::West)
++                        } else if mouse_pos.x >= width - edge {
++                            Some(ResizeDirection::East)
++                        } else { None };
++                        if let Some(direction) = direction {
++                            if window.drag_resize_window(direction).is_ok() {
++                                selecting = false;
++                                return;
++                            }
++                        }
++                    }
+                     if preferences.visible {

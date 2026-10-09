@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Google Chrome
+GenericName=Web browser
+GenericName[sv]=Webbläsare
+Comment=Open Chrome or download it on first use
+Comment[sv]=Öppna Chrome eller hämta det första gången
+Exec=hafthios-chrome
+Icon=web-browser
+Terminal=false
+Categories=Network;WebBrowser;
+Keywords=chrome;browser;web;internet;

@@ -99,7 +99,8 @@ Choose **Project source guide** for the separate, detailed source explanations a
 
 - **Super + Enter**: open Hafþi.
 - **Super + B**: open or download Google Chrome.
-- **Super + Space**: show or hide the right-hand desktop panel.
+- **Super + Space**: open the program launcher.
+- **Super + Shift + Space**: show or hide the right-hand desktop panel.
 - **Super + D**: open display settings.
 - **Super + G**: open the local file guide.
 - **Super + Left / Right**: switch columns.
@@ -169,3 +170,28 @@ the faster KVM retest checks the installer, applications and BIOS/UEFI disk boot
 ### USB installation and RAM-backed live sessions
 
 The installer accepts both USB-backed and copy-to-RAM Archiso sessions. The original live USB remains excluded from disk selection even after Archiso unmounts it. An unidentifiable live medium stops planning rather than offering unsafe targets. Installation errors include the backend reason. CI boots a writable 32 GiB virtual USB, verifies RAM-root recognition and live-media exclusion, then installs onto a separate empty disk and tests installed BIOS/UEFI login and logout.
+
+## Programs and terminal width
+
+Press **Super + Space** or choose **Programs** in the right panel to search installed programs. Arrow keys select, Enter opens and Escape closes. The launcher lists up to five results and remembers recent programs. **Super + Shift + Space** toggles the right panel.
+
+Drag the Hafthi terminal’s left or right edge to adjust its width; the pointer changes to a horizontal resize cursor. Super + right-button dragging also resizes windows through Niri.
+
+## Desktop updates
+
+On an installed system, `sudo hafthios-update` downloads the latest desktop release
+whose complete ISO/VM run passed. It verifies checksums, saves a backup, updates the
+Hafthi terminal, panel, launcher, village and base configuration, and reapplies your
+saved language, keyboard and display settings. Personal files, passwords and village
+age are preserved. Log out and back in after updating.
+
+Use `sudo hafthios-update --check` to check availability and
+`sudo hafthios-update --rollback` to restore the previous desktop. Existing installations
+need the command bootstrapped once from a verified release. Arch packages remain managed
+by pacman; this command updates our desktop components, without repartitioning or
+replacing the bootloader/kernel. CI tests application and rollback on its newly installed disk.
+
+The wider village includes grain farming, fish delivery and cleaning, cooking, bread,
+net repair, sail weaving, roof repairs, herded goats, chickens, conversations and benches.
+A shared supper leads into a slow evening with brighter hearths, clouds and sparse stars;
+villagers return home. Its 30-minute day uses the existing saved village clock and pause controls.

@@ -197,6 +197,11 @@ with tempfile.TemporaryDirectory() as tmp:
     payload = tmp / 'test-input'
     payload.mkdir()
     shutil.copyfile('scripts/vm-install.py', payload / 'install.py')
+    update_archive = out / 'hafthios-update.tar.gz'
+    if not reuse_iso:
+        if not update_archive.is_file():
+            raise RuntimeError('Fresh ISO build has no desktop update package')
+        shutil.copyfile(update_archive, payload / 'update.tar.gz')
     payload_iso = tmp / 'test-input.iso'
     subprocess.run(['xorriso', '-as', 'mkisofs', '-quiet', '-V', 'hafthios-test',
                     '-o', str(payload_iso), str(payload)], check=True, timeout=60)
@@ -217,6 +222,7 @@ with tempfile.TemporaryDirectory() as tmp:
         '-nic', 'user,model=virtio-net-pci',
         '-cpu', cpu_model,
         '-device', 'qemu-xhci',
+        '-device', 'usb-tablet',
         '-drive', f'file={live_usb},format=raw,if=none,id=liveusb',
         '-device', 'usb-storage,drive=liveusb,bootindex=1',
         '-drive', f'file={payload_iso},format=raw,media=cdrom,readonly=on',
@@ -380,9 +386,71 @@ with tempfile.TemporaryDirectory() as tmp:
             raise RuntimeError('Right panel did not toggle to hidden=' + str(hidden))
         wait_panel(False)
         for hidden in (True, False):
-            qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'meta_l'}, {'type': 'qcode', 'data': 'spc'}]})
+            qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'meta_l'}, {'type': 'qcode', 'data': 'shift'}, {'type': 'qcode', 'data': 'spc'}]})
             wait_panel(hidden)
             capture_screen(sock_path, out / ('panel-hidden.ppm' if hidden else 'panel-open.ppm'))
+        # Use the actual focus-ring pixels to locate the terminal client edge.
+        # No modifier is held: this verifies Hafthi's native left-button resize.
+        def terminal_width():
+            lines = [line for line in serial_path.read_text(errors='replace').splitlines()
+                     if line.startswith('HAFTHIOS_DESKTOP_READY ')]
+            windows = json.loads(lines[-1].split(' ', 1)[1])
+            return next(w['layout']['window_size'][0] for w in windows
+                        if w['app_id'] == 'se.dahlbeck.Hafthi' and w['is_focused'])
+        before_width = terminal_width()
+        capture_screen(sock_path, out / 'terminal-before-resize.ppm')
+        from PIL import Image
+        screen = Image.open(out / 'terminal-before-resize.ppm').convert('RGB')
+        band = []
+        for y in range(min(80, screen.height)):
+            xs = [x for x in range(screen.width) if all(abs(a-b) <= 4 for a,b in zip(screen.getpixel((x,y)), (118,209,199)))]
+            if len(xs) > 150:
+                band = xs
+                break
+        if not band:
+            raise RuntimeError('Could not locate terminal focus ring for edge resize test')
+        x, y = max(band) - 4, screen.height // 2
+        def pointer(px, py):
+            qmp_request(sock_path, 'input-send-event', {'events': [
+                {'type': 'abs', 'data': {'axis': 'x', 'value': int(px * 32767 / (screen.width-1))}},
+                {'type': 'abs', 'data': {'axis': 'y', 'value': int(py * 32767 / (screen.height-1))}}]})
+        pointer(x, y)
+        time.sleep(1)
+        qmp_request(sock_path, 'input-send-event', {'events': [{'type': 'btn', 'data': {'down': True, 'button': 'left'}}]})
+        time.sleep(.3)
+        for offset in (20, 40, 60, 80):
+            pointer(x + offset, y)
+            time.sleep(.25)
+        qmp_request(sock_path, 'input-send-event', {'events': [{'type': 'btn', 'data': {'down': False, 'button': 'left'}}]})
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if abs(terminal_width() - before_width) > 30:
+                break
+            time.sleep(1)
+        else:
+            raise RuntimeError('Dragging Hafthi edge did not change terminal width')
+        capture_screen(sock_path, out / 'terminal-after-resize.ppm')
+        print('HAFTHIOS_RESIZE_TEST_OK: Hafthi width changed by native left-button edge drag', flush=True)
+        qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'meta_l'}, {'type': 'qcode', 'data': 'spc'}]})
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if 'HAFTHIOS_LAUNCHER_READY ' in serial_path.read_text(errors='replace'):
+                break
+            time.sleep(1)
+        else:
+            raise RuntimeError('Program launcher did not open')
+        capture_screen(sock_path, out / 'launcher-screen.ppm')
+        type_text(sock_path, 'hafthi')
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            text = serial_path.read_text(errors='replace')
+            lines = [line for line in text.splitlines() if line.startswith('HAFTHIOS_LAUNCHER_OPENED ')]
+            if lines and json.loads(lines[-1].split(' ', 1)[1])['id'] == 'hafthios-terminal.desktop':
+                break
+            time.sleep(1)
+        else:
+            raise RuntimeError('Launcher did not start Hafthi from its desktop entry')
+        print('HAFTHIOS_LAUNCHER_TEST_OK: real Wayland keyboard shortcut, search and Hafthi desktop entry launch', flush=True)
         qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'meta_l'}, {'type': 'qcode', 'data': 'd'}]})
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
@@ -398,7 +466,7 @@ with tempfile.TemporaryDirectory() as tmp:
         capture_screen(sock_path, out / 'display-settings.ppm')
         # A layer-shell panel can retain keyboard focus even when Niri opens
         # a new window. Unmap it before pressing Chrome's download button.
-        qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'meta_l'}, {'type': 'qcode', 'data': 'spc'}]})
+        qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'meta_l'}, {'type': 'qcode', 'data': 'shift'}, {'type': 'qcode', 'data': 'spc'}]})
         wait_panel(True)
         qmp_request(sock_path, 'send-key', {'keys': [{'type': 'qcode', 'data': 'meta_l'}, {'type': 'qcode', 'data': 'b'}]})
         deadline = time.monotonic() + 60

@@ -190,7 +190,7 @@
         "Install Hafthi OS lists eligible unmounted disks, requests a root-owned plan, reviews full-disk erasure and requires matching passwords and the exact erase phrase.",
         "Installation runs in a worker with JSON progress. Passwords are passed through stdin, not command arguments or log messages. Close and navigation are blocked while writing.",
         "The installed desktop omits the installer button; its ready marker reports root filesystem and persistent settings for the VM test.",
-        "The desktop uses GTK4 Layer Shell to anchor a single panel to the right edge. Hide panel leaves a small clickable edge tab; Super+Space toggles the same instance. The user's hidden state is saved separately.",
+        "The desktop uses GTK4 Layer Shell to anchor a single panel to the right edge. Hide panel leaves a small clickable edge tab; Super+Shift+Space toggles the same instance; Super+Space opens the program launcher. The user's hidden state is saved separately.",
         "Display settings lists Niri's advertised modes and scaling. A trial has a 15-second confirmation countdown plus an independent restore process if the GUI crashes. Only confirmed settings are written.",
         "Displays the installer backend JSON error when preparing installation fails, rather than hiding the cause behind a subprocess exit status.",
         "Disk listing and installation planning both run through the privileged installer helper; probing the original USB after RAM boot requires block-device access. Backend errors and sudo failures are shown to the user."
@@ -383,7 +383,8 @@
       "when": "During the Arch ISO build.",
       "details": [
         "Compiles the MIT-licensed terminal with Rust and places the executable, command helper, license and source revision in the image.",
-        "Build dependencies live in the isolated build container. Cargo dependency resolution follows the upstream manifest, which currently has no committed lockfile."
+        "Build dependencies live in the isolated build container. Cargo dependency resolution follows the upstream manifest, which currently has no committed lockfile.",
+        "Applies the reviewed OS horizontal edge-resize patch to the pinned revision before compilation; git apply failures stop the build."
       ],
       "connections": [
         "scripts/build-iso.sh"
@@ -436,7 +437,8 @@
       "details": [
         "Starts Hafþi and the desktop controls. Defines focus, window management, browser and guide shortcuts.",
         "Uses the system’s accelerated graphics driver, not the welcome compositor’s software renderer.",
-        "Terminal actions use the locale-aware wrapper. Super + comma opens language and keyboard settings."
+        "Terminal actions use the locale-aware wrapper. Super + comma opens language and keyboard settings.",
+        "Super+Space opens the native launcher; Super+Shift+Space toggles the right panel. Super+right-button dragging remains available for compositor window resizing."
       ],
       "connections": [
         "scripts/build-iso.sh"
@@ -704,7 +706,8 @@
         "Animation uses at most 12 frames per second, 8 under high load and 5 in economy mode or on low battery. Pause freezes village age and telemetry appearance; settings continue to be polled. Runtime status supports actual VM verification.",
         "The 2160×1350 scene uses uniform fitting on every display. Adults, doorways, longhouses and ships share scene units; ship scale excludes the original PNG margins and its hull is anchored at the waterline.",
         "Continuous occupation routes lead from a house doorway to woodcutting, hunting, animal feeding, construction, shipbuilding, cargo work and smithing, then back indoors. Docked voyage intervals allow animated loading; the boatyard grows a hull and launches a new ship. A forge includes hearth glow, bellows and anvil work.",
-        "Shared schedules connect a timber delivery to smithing, tool delivery and shipwright work. The hull gains planks after tools arrive and launches after the builders finish. A separate arrival clock brings two crew members over the gangplank, unloads cargo by cart at the market and boards them before departure. Helper counts still respond to CPU activity."
+        "Shared schedules connect a timber delivery to smithing, tool delivery and shipwright work. The hull gains planks after tools arrive and launches after the builders finish. A separate arrival clock brings two crew members over the gangplank, unloads cargo by cart at the market and boards them before departure. Helper counts still respond to CPU activity.",
+        "The slightly wider view includes fields, grain storage, fish delivery, cooking, bread, net repair, sail weaving, roof repair, herded goats, chickens, conversation, benches and shared supper. A continuous saved 30-minute day brings villagers home, dims the sky and reveals sparse stars; clouds move slowly."
       ]
     },
     {
@@ -733,6 +736,116 @@
         "Checks preference validation and reduced frame cadence; the separate VM test exercises the actual GTK background and pause/resume behavior.",
         "Checks continuous worker journeys into and out of homes and voyage continuity with real docking intervals for cargo work.",
         "Verifies handoff order, crew boarding before departure and position continuity across two full connected-work cycles."
+      ]
+    },
+    {
+      "path": "live/usr/local/bin/hafthios-launcher",
+      "purpose": "Native GTK program search overlay launched on demand.",
+      "when": "During desktop use or build verification.",
+      "connections": [
+        "live/etc/niri/config.kdl",
+        "live/usr/local/bin/hafthios-welcome"
+      ],
+      "details": [
+        "Discovers visible desktop entries with Gio, ranks up to five results and launches through AppInfo without shell parsing.",
+        "Saves only recent desktop-entry IDs; supports keyboard arrows, Enter, Escape and outside click. The layer-shell overlay dims the village and releases keyboard focus on exit."
+      ]
+    },
+    {
+      "path": "live/usr/share/applications/hafthios-terminal.desktop",
+      "purpose": "Registers Hafthi in program launchers.",
+      "when": "During desktop use or build verification.",
+      "connections": [
+        "live/usr/local/bin/hafthios-terminal"
+      ],
+      "details": [
+        "Uses the existing terminal wrapper and a standard terminal icon."
+      ]
+    },
+    {
+      "path": "live/usr/share/applications/hafthios-chrome.desktop",
+      "purpose": "Registers Chrome and its first-use download wrapper.",
+      "when": "During desktop use or build verification.",
+      "connections": [
+        "live/usr/local/bin/hafthios-chrome"
+      ],
+      "details": [
+        "Launching this entry opens Chrome or the existing download dialog."
+      ]
+    },
+    {
+      "path": "scripts/hafthi-edge-resize.patch",
+      "purpose": "Adds horizontal edge dragging to the pinned Hafthi terminal source.",
+      "when": "During desktop use or build verification.",
+      "connections": [
+        "scripts/build-hafthi.sh"
+      ],
+      "details": [
+        "A six-logical-pixel left/right target uses winit Wayland drag_resize_window and a horizontal resize cursor.",
+        "Interior text selection remains unchanged; preferences and context menus do not trigger edge resizes."
+      ]
+    },
+    {
+      "path": "scripts/preview-launcher.py",
+      "purpose": "Renders and tests the actual GTK launcher under Xvfb before an ISO build.",
+      "when": "During desktop use or build verification.",
+      "connections": [
+        "live/usr/local/bin/hafthios-launcher",
+        ".github/workflows/build.yml"
+      ],
+      "details": [
+        "Uses a temporary desktop entry to verify search, actual launch and Escape; saves a screenshot and diagnostics."
+      ]
+    },
+    {
+      "path": "tests/test_launcher.py",
+      "purpose": "Checks launcher matching and bounded recent program history.",
+      "when": "During desktop use or build verification.",
+      "connections": [
+        "live/usr/local/bin/hafthios-launcher"
+      ],
+      "details": [
+        "Exercises accent folding, multiword search, name ranking, missing results, corrupt history and five-result limit."
+      ]
+    },
+    {
+      "path": "live/usr/local/bin/hafthios-update",
+      "purpose": "Updates installed Hafthi-owned desktop files with backup and rollback.",
+      "when": "During desktop update creation, installation or verification.",
+      "connections": [
+        "live/usr/local/bin/hafthios-update",
+        "scripts/build-update.py"
+      ],
+      "details": [
+        "Requires a completed successful main-branch VM run for the published release.",
+        "Checks archive and per-file hashes; rejects unexpected paths and links.",
+        "Preserves user files, village age and settings; --rollback restores the previous desktop."
+      ]
+    },
+    {
+      "path": "scripts/build-update.py",
+      "purpose": "Builds a versioned desktop update archive from the ISO root.",
+      "when": "During desktop update creation, installation or verification.",
+      "connections": [
+        "live/usr/local/bin/hafthios-update",
+        "scripts/build-update.py"
+      ],
+      "details": [
+        "Packages compiled terminal, desktop tools, base Niri configuration and local documentation.",
+        "Excludes live installation policy, bootloader, kernel, passwords and unrelated packages."
+      ]
+    },
+    {
+      "path": "tests/test_update.py",
+      "purpose": "Checks update validation, preservation and rollback.",
+      "when": "During desktop update creation, installation or verification.",
+      "connections": [
+        "live/usr/local/bin/hafthios-update",
+        "scripts/build-update.py"
+      ],
+      "details": [
+        "Rejects traversal, links, unknown destinations and checksum mismatches.",
+        "Exercises real file replacement and restoration without modifying personal documents."
       ]
     }
   ]
