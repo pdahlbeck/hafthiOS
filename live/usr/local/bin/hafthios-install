@@ -79,8 +79,10 @@ def live_media_paths():
 
 
 def read_disks():
-    excluded = live_media_paths() if live_root() else ()
-    return eligible_disks(json.loads(command(['lsblk', '--json', '--bytes', '--output', COLUMNS])), excluded)
+    # Never offer disks when the live root cannot be verified.
+    live_only()
+    excluded = live_media_paths()
+    return eligible_disks(json.loads(command(['lsblk', '--json', '--bytes', '--tree', '--output', COLUMNS])), excluded)
 
 
 def identity(disk):

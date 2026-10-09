@@ -50,12 +50,32 @@ class InstallationSafetyTests(unittest.TestCase):
             if args[0] == 'lsblk': return json.dumps(payload)
             self.fail(str(args))
         globals_ = backend['read_disks'].__globals__
-        with patch.dict(globals_, command=command, live_root=lambda: True):
+        with patch.dict(globals_, command=command, live_root=lambda: True, live_only=lambda: None):
             with patch.object(Path, 'read_text', return_value='archisobasedir=arch archisosearchuuid=live-uuid'):
                 self.assertEqual([d['path'] for d in backend['read_disks']()], ['/dev/nvme0n1'])
             with patch.object(Path, 'read_text', return_value='quiet splash'):
                 with self.assertRaisesRegex(RuntimeError, 'Could not identify the live USB'):
                     backend['read_disks']()
+
+    def test_real_lsblk_requires_tree_when_name_column_is_absent(self):
+        # lsblk JSON is flat unless NAME is requested or --tree is explicit.
+        # A boot UUID can identify /dev/sda1; its whole USB parent must be hidden.
+        usb = disk('/dev/sda')
+        partition = {'path': '/dev/sda1', 'type': 'part', 'mountpoints': [None]}
+        internal = disk('/dev/nvme0n1')
+        def command(args, **kwargs):
+            self.assertEqual(args[0], 'lsblk')
+            if '--tree' in args:
+                return json.dumps({'blockdevices': [dict(usb, children=[partition]), internal]})
+            return json.dumps({'blockdevices': [usb, partition, internal]})
+        with patch.dict(backend['read_disks'].__globals__, command=command,
+                        live_only=lambda: None, live_media_paths=lambda: {'/dev/sda1'}):
+            self.assertEqual([d['path'] for d in backend['read_disks']()], ['/dev/nvme0n1'])
+
+    def test_disk_list_fails_closed_when_live_root_is_not_verified(self):
+        with patch.dict(backend['read_disks'].__globals__, live_root=lambda: False):
+            with self.assertRaisesRegex(RuntimeError, 'only from the live ISO'):
+                backend['read_disks']()
 
     def test_mounted_live_media_source_is_excluded_without_boot_uuid(self):
         def command(args, **kwargs):

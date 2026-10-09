@@ -528,7 +528,7 @@
         "Creates BIOS boot, EFI and ext4 partitions, copies the live root and home, installs normal kernel/initramfs/GRUB and retains the offline ISO guide.",
         "Removes live autologin and passwordless sudo, locks root, sets the hafthi password through stdin, and applies the saved language/layout to the installed home.",
         "A single-instance lock and consumed plans prevent concurrent/repeated execution. Errors stop installation and may leave the confirmed disk partially written.",
-        "Recognizes the actual Archiso overlay and read-only squashfs root with or without mounted boot media. Resolves original USB identity from Archiso UUID/label/device arguments and excludes it after copy-to-RAM; refuses disk selection if live media cannot be identified."
+        "Recognizes the actual Archiso overlay and read-only squashfs root with or without mounted boot media. Resolves original USB identity from Archiso UUID/label/device arguments and excludes it after copy-to-RAM; refuses disk selection if live media cannot be identified. Requests an explicit lsblk tree so partition UUIDs exclude the whole USB parent even without a NAME column."
       ]
     },
     {
@@ -543,7 +543,7 @@
         "Tests exclusion of live media, mounted roots, swap, readonly/small disks and stacked devices.",
         "Checks exact confirmation, password constraints, expiry and changed disk identity. Invalid confirmation cannot reach a disk-writing command.",
         "Uses a temporary target tree to verify removal of live autologin/NOPASSWD and replacement with normal installed kernel and locale settings. The actual install/boot path is exercised in a disposable VM.",
-        "Checks RAM and USB live-root recognition, rejects installed or unrelated roots, excludes an unmounted USB by boot UUID, and fails closed when live media identity is missing."
+        "Checks RAM and USB live-root recognition, rejects installed or unrelated roots, excludes an unmounted USB by boot UUID, and fails closed when live media identity or the verified live root is missing. Reproduces flat lsblk JSON without NAME and verifies explicit tree output excludes the USB parent."
       ]
     },
     {
