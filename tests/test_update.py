@@ -67,6 +67,28 @@ class UpdateTests(unittest.TestCase):
                 self.assertFalse((root / 'usr/local/bin/hafthios-launcher').exists())
                 self.assertEqual(user.read_text(), 'personal file')
 
+    def test_village_only_payload_and_rollback_leave_launcher_untouched(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'system'
+            payload = Path(tmp) / 'payload'
+            village = root / 'usr/local/bin/hafthios-world'
+            launcher = root / 'usr/local/bin/hafthios-launcher'
+            village.parent.mkdir(parents=True)
+            village.write_text('previous village')
+            launcher.write_text('working launcher')
+            source = payload / 'usr/local/bin/hafthios-world'
+            source.parent.mkdir(parents=True)
+            source.write_text('updated village')
+            backup = Path(tmp) / 'backup'
+            manifest = {'files': [{'path': 'usr/local/bin/hafthios-world', 'mode': 0o755}]}
+            with patch.object(updater['os'], 'chown'):
+                updater['apply_payload'](payload, manifest, root, backup)
+                self.assertEqual(village.read_text(), 'updated village')
+                self.assertEqual(launcher.read_text(), 'working launcher')
+                updater['restore'](backup)
+                self.assertEqual(village.read_text(), 'previous village')
+                self.assertEqual(launcher.read_text(), 'working launcher')
+
     def test_download_rejects_unverified_release(self):
         values = [json.dumps({'assets': [{'name': name, 'browser_download_url': 'https://github.com/' + name}
                   for name in ('hafthios-update.tar.gz', 'hafthios-update.sha256', 'hafthios-update.json')]}).encode(),

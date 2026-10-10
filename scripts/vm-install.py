@@ -8,7 +8,7 @@ import traceback
 def test_update():
     """Exercise the shipped command on the newly installed disposable disk."""
     from pathlib import Path
-    import shutil, subprocess, tempfile, json
+    import shutil, subprocess, tempfile, json, tarfile, hashlib
     archive=Path(__file__).resolve().with_name('update.tar.gz')
     if not archive.exists():
         return  # A reused older ISO has no newly built update package.
@@ -17,10 +17,27 @@ def test_update():
         subprocess.run(['mount','/dev/vda3',str(root)],check=True,timeout=30)
         try:
             shutil.copyfile(archive,root/'var/tmp/hafthios-test-update.tar.gz')
-            launcher=root/'usr/local/bin/hafthios-launcher'
-            old=b'#!/bin/sh\n# previous desktop fixture\nexit 0\n'
-            launcher.write_bytes(old)
-            launcher.chmod(0o755)
+            # Test the actual package scope, including village-only updates.
+            with tarfile.open(archive, 'r:gz') as package:
+                manifest=json.load(package.extractfile('manifest.json'))
+            files=manifest['files']
+            assert files, 'Update package is empty'
+            for item in files:
+                target=root/item['path']
+                assert target.is_file(), item['path']
+                # Force a detectable prior revision even when baseline already
+                # contains the same village. Rollback must restore this exactly.
+                target.write_bytes(b'#!/bin/sh\n# prior VM update fixture\nexit 0\n')
+            untouched_launcher=root/'usr/local/bin/hafthios-launcher'
+            launcher_before=untouched_launcher.read_bytes() if not any(
+                item['path']=='usr/local/bin/hafthios-launcher' for item in files) else None
+            def payload_matches():
+                for item in files:
+                    target=root/item['path']
+                    assert hashlib.sha256(target.read_bytes()).hexdigest()==item['sha256'], item['path']
+                    assert target.stat().st_mode & 0o777==item['mode'], item['path']
+                if launcher_before is not None:
+                    assert untouched_launcher.read_bytes()==launcher_before
             home=root/'home/hafthi'
             personal=home/'Documents/update-preservation-test.txt'
             personal.parent.mkdir(exist_ok=True)
@@ -37,14 +54,15 @@ def test_update():
                 assert json.loads(prefs.read_bytes())==json.loads(saved)
                 assert (village.read_bytes() if village.exists() else None)==age
             command('--package','/var/tmp/hafthios-test-update.tar.gz')
-            assert launcher.read_bytes()!=old
+            payload_matches()
             assert 'hafthios-launcher' in (home/'.config/niri/config.kdl').read_text()
             preserved()
             command('--rollback')
-            assert launcher.read_bytes()==old
+            for item in files:
+                assert (root/item['path']).read_bytes()==b'#!/bin/sh\n# prior VM update fixture\nexit 0\n'
             preserved()
             command('--package','/var/tmp/hafthios-test-update.tar.gz')
-            assert launcher.read_bytes()!=old
+            payload_matches()
             preserved()
             personal.unlink()
             (root/'var/tmp/hafthios-test-update.tar.gz').unlink()
