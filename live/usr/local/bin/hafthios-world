@@ -306,11 +306,35 @@ def connected_actors(t):
     return supply+trade
 
 
+def hunting_state(t):
+    """Twenty measured shots per outing, one catch, then a walk home."""
+    phase=t%360
+    home=(785,823); stand=(360,840); prey=(540,835)
+    if phase<40:
+        position=route_position(walking_route(home,stand),phase/40)
+        action='walk'; shot=None
+    elif phase<280:
+        position=stand; action='hunt'; shot=int((phase-40)//12)
+    elif phase<320:
+        position=route_position(walking_route(stand,prey),(phase-280)/40)
+        action='walk'; shot=None
+    else:
+        position=route_position(walking_route(prey,home),(phase-320)/40)
+        action='carry'; shot=None
+    flight=(phase-40)%12 if shot is not None else None
+    return {'visible':True,'position':position,'action':action,'phase':phase,
+            'shot':shot,'flight':flight,'hit':shot==19,
+            'caught':269.8<=phase<320,'prey':prey}
+
+
 class Village:
     def __init__(self, cairo):
         self.cairo = cairo
         self.trees = [(random.Random(i).uniform(70, 620), random.Random(i + 80).uniform(740, 930),
                        random.Random(i + 160).uniform(30, 62)) for i in range(26)]
+        self.trees += [(random.Random(900+i).uniform(1820,2150),
+                        random.Random(980+i).uniform(735,795),
+                        random.Random(1060+i).uniform(28,48)) for i in range(18)]
         path = Path(__file__).parents[2] / 'share/plymouth/themes/hafthios/ship.png'
         original = cairo.ImageSurface.create_from_png(str(path))
         self.ship = cairo.ImageSurface(cairo.FORMAT_ARGB32, original.get_width(), original.get_height())
@@ -603,6 +627,12 @@ class Village:
         self.line(c,coast,.32,1.4)
         self.torsburgen(c)
         for x,y,size in sorted(self.trees,key=lambda v:v[1]):
+            c.move_to(x-size*.55,y)
+            c.line_to(x,y-size*1.6)
+            c.line_to(x+size*.55,y)
+            c.close_path()
+            c.set_source_rgb(.145,.20,.19)
+            c.fill()
             self.line(c,[(x,y),(x,y-size*1.4)],.20)
             self.line(c,[(x-size*.45,y-size*.3),(x,y-size*1.6),(x+size*.45,y-size*.3)],.18)
             self.line(c,[(x-size*.55,y-size*.1),(x,y-size*1.1),(x+size*.55,y-size*.1)],.15)
@@ -658,7 +688,14 @@ class Village:
         for x in (1220,1290):
             self.line(c,[(x,1020),(x,992),(x+45,992),(x+45,1020)],.29)
             self.line(c,[(x-5,991),(x+22,976),(x+50,991)],.34)
-        # Open smithy: a sheltered hearth, bellows and an anvil beside the yard.
+        # Opaque rear wall and roof; the open front reveals the forge tools.
+        for polygon,color in [([(1095,945),(1095,896),(1250,896),(1250,945)],(.14,.20,.20)),
+                              ([(1082,897),(1118,854),(1235,854),(1267,897)],(.21,.25,.22))]:
+            c.move_to(*polygon[0])
+            for point in polygon[1:]: c.line_to(*point)
+            c.close_path()
+            c.set_source_rgb(*color)
+            c.fill()
         self.line(c,[(1095,945),(1095,896),(1250,896),(1250,945)],.32,1.7)
         self.line(c,[(1082,897),(1118,854),(1235,854),(1267,897),(1082,897)],.40)
         self.line(c,[(1215,880),(1215,832),(1230,832),(1230,881)],.27)
@@ -765,7 +802,7 @@ class Village:
                              (1270+i*12,1010)],.38,warm=True)
         for i,(task,destination) in enumerate(jobs[:workers]):
             hx,hy,hs,_=HOUSES[i%3]
-            state=worker_state(t,i,(hx-25*hs,hy-3),destination,task)
+            state=hunting_state(t) if task=='hunt' else worker_state(t,i,(hx-25*hs,hy-3),destination,task)
             if state['visible']:
                 states.append((state['position'][1],i,state))
         for _,i,state in sorted(states):
@@ -786,11 +823,23 @@ class Village:
                     c.stroke()
             elif action in ('talk','trade'):
                 self.line(c,[(x+4,y-13),(x+9,y-12+math.sin(t*1.5+i)*2)],.46,1.6)
-            if state['action']=='hunt'  and state['phase']%8<1.8:
-                f=(state['phase']%8)/1.8
-                self.line(c,[(x+22+95*f,y-12-12*math.sin(math.pi*f)),
-                             (x+32+95*f,y-12-12*math.sin(math.pi*f))],.37)
-        self.animal(c,455+35*math.sin(t/70),801,t,12,deer=True)
+            if action=='hunt' and state['flight']<1.8:
+                f=state['flight']/1.8
+                target_x,target_y=state['prey']
+                miss=0 if state['hit'] else (-28 if state['shot']%2 else 25)
+                ax=x+20+(target_x-x-20)*f
+                ay=y-12+(target_y-y+miss+5)*f-15*math.sin(math.pi*f)
+                self.line(c,[(ax-9,ay),(ax,ay)],.37)
+        hunt=hunting_state(t)
+        px,py=hunt['prey']
+        c.save()
+        if hunt['caught']:
+            c.translate(px,py)
+            c.rotate(-math.pi/2)
+            self.animal(c,0,0,t,12,deer=True)
+        else:
+            self.animal(c,px+3*math.sin(t/9),py,t,12,deer=True)
+        c.restore()
         for i in range(4):
             x=1000+i*95+math.sin(t/50+i)*65
             yy=540+math.sin(t/17+i)*9

@@ -36,6 +36,20 @@ class VillageTests(unittest.TestCase):
             self.assertTrue(all(world['clear_house_segment'](p,q)
                                 for p,q in zip(route,route[1:])))
 
+    def test_hunter_keeps_distance_and_catches_one_of_twenty_shots(self):
+        import math
+        hunt=world['hunting_state']
+        shots=[hunt(40+i*12+.5) for i in range(20)]
+        self.assertEqual(sum(s['hit'] for s in shots),1)
+        self.assertTrue(all(math.dist(s['position'],s['prey'])>150 for s in shots))
+        self.assertTrue(hunt(275)['caught'])
+        self.assertFalse(hunt(325)['caught'])
+        previous=hunt(0)
+        for i in range(1,7201):
+            current=hunt(i*.1)
+            self.assertLess(math.dist(previous['position'],current['position']),3)
+            previous=current
+
     def test_food_delivery_supper_and_night_have_continuous_routes(self):
         actors=world['daily_actors']
         self.assertEqual(actors(400)[1]['action'],'fish-carry')
