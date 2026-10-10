@@ -59,6 +59,10 @@ jobs:
           path: out
           github-token: ${{ github.token }}
           run-id: ${{ steps.baseline.outputs.run_id }}
+      - name: Discard baseline diagnostics before collecting fresh evidence
+        if: steps.scope.outputs.enabled == 'true'
+        run: |
+          find out -type f \( -name "*.log" -o -name "*.ppm" -o -name "*.png" \) -delete
       - name: Test and render the new village
         if: steps.scope.outputs.enabled == 'true'
         run: |

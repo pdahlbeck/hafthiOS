@@ -228,6 +228,8 @@ with tempfile.TemporaryDirectory() as tmp:
         stream.truncate(32 * 1024**3)
     sock_path = tmp / 'qmp.sock'
     serial_path = out / 'boot-serial.log'
+    # Never let readiness checks consume a downloaded baseline's serial output.
+    serial_path.unlink(missing_ok=True)
     process = subprocess.Popen([
         # The live overlay uses half of RAM; signed full upgrades need headroom.
         'qemu-system-x86_64', '-accel', acceleration, '-m', '8192', '-smp', '2',
@@ -543,6 +545,7 @@ with tempfile.TemporaryDirectory() as tmp:
         for firmware in ('bios', 'uefi'):
             sock_path.unlink(missing_ok=True)
             serial_path = out / ('installed-' + firmware + '-serial.log')
+            serial_path.unlink(missing_ok=True)
             extra = []
             if firmware == 'uefi':
                 variables = tmp / 'OVMF_VARS.fd'
