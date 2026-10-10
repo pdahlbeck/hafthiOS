@@ -16,7 +16,7 @@ def test_update():
         root=Path(temporary)
         subprocess.run(['mount','/dev/vda3',str(root)],check=True,timeout=30)
         try:
-            shutil.copyfile(archive,root/'tmp/hafthios-test-update.tar.gz')
+            shutil.copyfile(archive,root/'var/tmp/hafthios-test-update.tar.gz')
             launcher=root/'usr/local/bin/hafthios-launcher'
             old=b'#!/bin/sh\n# previous desktop fixture\nexit 0\n'
             launcher.write_bytes(old)
@@ -36,18 +36,18 @@ def test_update():
                 assert personal.read_text()=='keep my personal file\n'
                 assert json.loads(prefs.read_bytes())==json.loads(saved)
                 assert (village.read_bytes() if village.exists() else None)==age
-            command('--package','/tmp/hafthios-test-update.tar.gz')
+            command('--package','/var/tmp/hafthios-test-update.tar.gz')
             assert launcher.read_bytes()!=old
             assert 'hafthios-launcher' in (home/'.config/niri/config.kdl').read_text()
             preserved()
             command('--rollback')
             assert launcher.read_bytes()==old
             preserved()
-            command('--package','/tmp/hafthios-test-update.tar.gz')
+            command('--package','/var/tmp/hafthios-test-update.tar.gz')
             assert launcher.read_bytes()!=old
             preserved()
             personal.unlink()
-            (root/'tmp/hafthios-test-update.tar.gz').unlink()
+            (root/'var/tmp/hafthios-test-update.tar.gz').unlink()
             print('HAFTHIOS_UPDATE_TEST_OK: installed update, settings, personal files, village age and rollback',flush=True)
         finally:
             subprocess.run(['umount','-R',str(root)],check=True,timeout=30)
