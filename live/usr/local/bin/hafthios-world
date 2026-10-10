@@ -2,6 +2,8 @@
 """A quiet, procedural coastal village, drawn behind the desktop windows."""
 import argparse
 import json
+from functools import lru_cache
+import heapq
 import math
 import os
 from pathlib import Path
@@ -102,6 +104,82 @@ WORLD_WIDTH, WORLD_HEIGHT = 2160, 1350
 HOUSES = [(820,810,1.4,0),(1240,765,1.5,0),(1660,840,1.45,0),
           (900,960,1.3,240),(1840,970,1.4,1080),(1510,995,1.25,1800)]
 DAY_LENGTH = 1800
+SUPPER_X, SUPPER_Y = 960, 1015
+COAST = [(-160,1040),(300,1060),(600,1100),(900,1070),(1200,1040),
+         (1400,1040),(1700,1130),(1900,1180),(2320,1140)]
+
+
+def shoreline_y(x):
+    for (ax,ay),(bx,by) in zip(COAST,COAST[1:]):
+        if ax<=x<=bx:
+            return ay+(by-ay)*(x-ax)/(bx-ax)
+    raise ValueError('Position outside landscape')
+
+
+# Screen-space footprints include roofs, so paths never appear over a house.
+HOUSE_OBSTACLES = [(x-99*size-8,y-71*size-8,x+130*size+8,y+12)
+                   for x,y,size,_ in HOUSES]
+
+
+def door_position(point):
+    x,y=point
+    for left,top,right,bottom in HOUSE_OBSTACLES:
+        if left<x<right and top<y<bottom:
+            return (x,bottom+1)
+    return point
+
+
+def clear_house_segment(a,b):
+    for left,top,right,bottom in HOUSE_OBSTACLES:
+        lo,hi=0.,1.
+        for start,delta,minimum,maximum in ((a[0],b[0]-a[0],left,right),
+                                          (a[1],b[1]-a[1],top,bottom)):
+            if abs(delta)<1e-9:
+                if not minimum<start<maximum:
+                    hi=-1; break
+            else:
+                low,high=sorted(((minimum-start)/delta,(maximum-start)/delta))
+                lo,hi=max(lo,low),min(hi,high)
+        if lo<hi and hi>0 and lo<1:
+            return False
+    return True
+
+
+@lru_cache(maxsize=512)
+def walking_route(a,b):
+    a,b=door_position(a),door_position(b)
+    if clear_house_segment(a,b):
+        return (a,b)
+    nodes=[a,b]
+    for left,top,right,bottom in HOUSE_OBSTACLES:
+        nodes.extend([(left-1,top-1),(right+1,top-1),
+                      (left-1,bottom+1),(right+1,bottom+1)])
+    queue=[(0.,0,(0,))]; best={0:0.}
+    while queue:
+        distance,index,path=heapq.heappop(queue)
+        if index==1:
+            return tuple(nodes[i] for i in path)
+        if distance>best[index]:
+            continue
+        for other,point in enumerate(nodes):
+            if other==index or not clear_house_segment(nodes[index],point):
+                continue
+            cost=distance+math.dist(nodes[index],point)
+            if cost<best.get(other,float('inf')):
+                best[other]=cost
+                heapq.heappush(queue,(cost,other,path+(other,)))
+    raise ValueError('No safe path around village houses')
+
+
+def route_position(points,fraction):
+    lengths=[math.dist(a,b) for a,b in zip(points,points[1:])]
+    distance=max(0,min(1,fraction))*sum(lengths)
+    for a,b,length in zip(points,points[1:],lengths):
+        if distance<=length:
+            f=distance/length if length else 0
+            return (a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f)
+        distance-=length
+    return points[-1]
 
 
 def evening_light(t):
@@ -117,12 +195,12 @@ def daily_actors(t):
            (1614,840),(775,810),(1192,765),(1614,840)]
     tasks=[[(130,field,'walk'),(350,field,'sow'),(450,field,'harvest'),
             (500,store,'sack'),(580,field,'walk'),(830,field,'harvest'),(900,store,'sack')],
-           [(130,quay,'walk'),(380,quay,'fish'),(440,kitchen,'fish-carry'),
-            (560,kitchen,'clean-fish'),(680,quay,'walk'),(850,quay,'fish'),(930,kitchen,'fish-carry')],
+           [(90,(1397,1020),'walk'),(130,quay,'walk'),(380,quay,'fish'),(400,(1397,1020),'fish-carry'),(440,kitchen,'fish-carry'),
+            (560,kitchen,'clean-fish'),(600,(1397,1020),'walk'),(680,quay,'walk'),(850,quay,'fish'),(880,(1397,1020),'fish-carry'),(930,kitchen,'fish-carry')],
            [(140,kitchen,'walk'),(440,kitchen,'talk'),(590,kitchen,'cook'),
             (640,oven,'walk'),(890,oven,'bake'),(970,kitchen,'bread')],
-           [(100,(1435,1060),'walk'),(400,(1435,1060),'net'),
-            (460,(1460,1030),'walk'),(830,(1460,1030),'weave'),(950,(1435,1060),'net')],
+           [(100,(1435,1025),'walk'),(400,(1435,1025),'net'),
+            (460,(1460,1030),'walk'),(830,(1460,1030),'weave'),(950,(1435,1025),'net')],
            [(130,(1650,835),'walk'),(570,(1650,835),'roof'),
             (660,(1690,915),'walk'),(900,(1690,915),'sit')],
            [(160,(1790,1080),'walk'),(230,(1790,1080),'feed'),
@@ -131,13 +209,14 @@ def daily_actors(t):
            [(120,(1000,880),'walk'),(440,(1000,880),'talk'),
             (510,store,'walk'),(790,store,'handoff'),(930,(1000,880),'sit')],
            [(140,(1014,880),'walk'),(440,(1014,880),'talk'),
-            (530,(1435,1060),'walk'),(840,(1435,1060),'net'),(920,(1014,880),'sit')],
+            (530,(1435,1025),'walk'),(840,(1435,1025),'net'),(920,(1014,880),'sit')],
            [(130,field,'walk'),(440,field,'sow'),(540,store,'sack'),
             (630,field,'walk'),(830,field,'harvest'),(920,store,'sack')]]
     actors=[]
     for i,(home,jobs) in enumerate(zip(homes,tasks)):
-        seat=(1480+(i%5)*17,1100+(i//5)*20)
-        schedule=[(35,home,'indoors')]+jobs+[(1050,seat,'walk'),(1230,seat,'eat'),
+        seat=(SUPPER_X+(i%5)*17,SUPPER_Y+(i//5)*20)
+        schedule=[(35,home,'indoors')]+jobs+[(985,(1550,1000),'walk'),
+                    (1025,(seat[0],990),'walk'),(1050,seat,'walk'),(1230,seat,'eat'),
                     (1360,home,'walk'),(DAY_LENGTH,home,'indoors')]
         actors.append(scheduled_actor(t,DAY_LENGTH,schedule))
     return actors
@@ -158,7 +237,8 @@ def voyage_state(t):
 
 def worker_state(t, index, home, destination, task):
     """A continuous home -> path -> task -> path -> indoor cycle."""
-    points=[home,(home[0],home[1]+38),(destination[0],home[1]+38),destination]
+    home,destination=door_position(home),door_position(destination)
+    points=walking_route(home,destination)
     distances=[math.dist(a,b) for a,b in zip(points,points[1:])]
     travel=sum(distances)/13  # Same walking speed for every occupation.
     work={'wood':60,'ship':80,'build':60,'smith':60,'hunt':40,'feed':30}.get(task,48)
@@ -193,8 +273,7 @@ def scheduled_actor(t, period, schedule):
     for end,point,action in schedule:
         if phase < end:
             f=(phase-start)/(end-start)
-            position=(previous[0]+(point[0]-previous[0])*f,
-                      previous[1]+(point[1]-previous[1])*f)
+            position=route_position(walking_route(previous,point),f)
             return {'visible':action not in ('indoors','aboard'), 'position':position,
                     'action':action, 'phase':phase-start}
         previous,start=point,end
@@ -484,8 +563,7 @@ class Village:
             c.set_source_rgba(.75,.81,.83,.20*dusk)
             c.fill()
         self.line(c,[(0,730),(350,716),(780,732),(1300,709),(1750,725),(2160,731)],.12)
-        coast=[(-160,1040),(300,1060),(600,1100),(900,1070),(1200,1040),
-               (1400,1040),(1700,1130),(1900,1180),(2320,1140)]
+        coast=COAST
         c.move_to(-160,730)
         c.line_to(2320,730)
         for point in reversed(coast):
@@ -522,22 +600,28 @@ class Village:
             c.arc(1573+i*3,1042,2,0,math.tau)
             c.set_source_rgba(.95,.56,.23,.25+.08*math.sin(t*1.4+i))
             c.fill()
+        c.save()
+        c.translate(SUPPER_X-1480,SUPPER_Y-1100)
         self.line(c,[(1480,1093),(1550,1093),(1550,1098),(1480,1098)],.39,1.5,warm=True)
         self.line(c,[(1472,1128),(1550,1128)],.33,2,warm=True)
+        c.restore()
         self.line(c,[(1673,922),(1710,922),(1710,930),(1673,930)],.34,1.8,warm=True)
         # Repair net and a weaving frame stand beside the cooking shelter.
         for i in range(6):
-            self.line(c,[(1420+i*5,1035),(1425+i*5,1060)],.22,.8)
-            self.line(c,[(1420,1035+i*5),(1447,1035+i*5)],.22,.8)
+            self.line(c,[(1420+i*5,1000),(1425+i*5,1025)],.22,.8)
+            self.line(c,[(1420,1000+i*5),(1447,1000+i*5)],.22,.8)
         self.line(c,[(1450,1030),(1450,995),(1475,995),(1475,1030)],.36)
         for i in range(8):
             self.line(c,[(1453+i*3,998),(1453+i*3,1028)],.23,.8,warm=True)
+        c.save()
+        c.translate(SUPPER_X-1480,SUPPER_Y-1100)
         for i in range(5):
             yy=1098-i*2
             self.line(c,[(1565,yy),(1578,yy-3)],.29,1.3,warm=True)
             c.arc(1570+i*2,1090,2+math.sin(t*2+i),0,math.tau)
             c.set_source_rgba(.95,.52,.20,.26+.12*dusk)
             c.fill()
+        c.restore()
         # Footpaths connect doors, work sites and the quay.
         for x,y,size,start in HOUSES[:3]:
             self.line(c,[(x-25*size,y),(x-25*size,y+38),(1340,y+38),(1380,1040)],.08)

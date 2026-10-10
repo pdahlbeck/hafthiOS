@@ -9,6 +9,33 @@ world = runpy.run_path(str(ROOT / 'live/usr/local/bin/hafthios-world'))
 
 
 class VillageTests(unittest.TestCase):
+    def test_supper_seats_fire_benches_and_approaches_stay_on_dry_land(self):
+        shore=world['shoreline_y']
+        x,y=world['SUPPER_X'],world['SUPPER_Y']
+        # Includes the lowest bench and the rightmost edge of the hearth.
+        for dx,dy in [(-8,28),(70,28),(102,-2)]:
+            self.assertLess(y+dy,shore(x+dx)-12)
+        for tick in range(0,18001):
+            for index,actor in enumerate(world['daily_actors'](tick/10)):
+                if actor['visible']:
+                    px,py=actor['position']
+                    if not (index==1 and abs(px-1397)<.01 and 1020<=py<=1145):
+                        self.assertLess(py,shore(px)-12)
+
+    def test_visible_villagers_do_not_cross_house_footprints(self):
+        for tick in range(0,3601):
+            for actor in world['daily_actors'](tick*.5)+world['connected_actors'](tick*.5):
+                if not actor['visible']:
+                    continue
+                x,y=actor['position']
+                for left,top,right,bottom in world['HOUSE_OBSTACLES']:
+                    self.assertFalse(left<x<right and top<y<bottom,
+                                     (tick,actor,(left,top,right,bottom)))
+        for a,b in [((775,810),(2040,875)),((1614,840),(960,1015))]:
+            route=world['walking_route'](a,b)
+            self.assertTrue(all(world['clear_house_segment'](p,q)
+                                for p,q in zip(route,route[1:])))
+
     def test_food_delivery_supper_and_night_have_continuous_routes(self):
         actors=world['daily_actors']
         self.assertEqual(actors(400)[1]['action'],'fish-carry')
@@ -75,7 +102,7 @@ class VillageTests(unittest.TestCase):
             if current['action'] == 'smith':
                 self.assertEqual(current['position'], destination)
             if not current['visible']:
-                self.assertEqual(current['position'], home)
+                self.assertEqual(current['position'], world['door_position'](home))
             if previous:
                 import math
                 self.assertLessEqual(math.dist(previous['position'],current['position']),1.31)
