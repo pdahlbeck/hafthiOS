@@ -521,6 +521,35 @@ class Village:
             self.line(c,[(x+13,y-15+head),(x+9,y-19+head)],.42)
         self.line(c,[(x-10,y-9),(x-15,y-12)],.32)
 
+    def torsburgen(self,c):
+        """A distant limestone plateau and enclosing wall above the left forest."""
+        c.save()
+        c.translate(80,655)
+        cliff=[(0,72),(18,42),(51,28),(106,20),(162,24),(219,18),
+               (275,31),(310,55),(327,78),(0,72)]
+        c.move_to(*cliff[0])
+        for point in cliff[1:]:
+            c.line_to(*point)
+        c.set_source_rgba(.24,.29,.27,.35)
+        c.fill()
+        self.line(c,cliff,.15,1)
+        # The wall follows the plateau, with a low front gate and no tall towers.
+        back=[(27,39),(51,26),(111,16),(177,20),(234,18),(278,30),(296,43)]
+        front=[(27,39),(45,47),(91,53),(144,55),(193,52),(243,47),(296,43)]
+        self.line(c,back,.20,1.1)
+        self.line(c,front,.24,1.2)
+        self.line(c,[(x,y+7) for x,y in front],.16,1)
+        for x,y in front[1:-1]:
+            self.line(c,[(x,y),(x-2,y+7)],.13,.7)
+        self.line(c,[(137,62),(137,54),(146,54),(146,62)],.21,.8)
+        for x,y in [(18,49),(53,56),(87,62),(177,61),(257,55),(296,59)]:
+            self.line(c,[(x,y),(x-5,y+13),(x-3,y+19)],.12,.8)
+        # Low woodland inside the enclosure dissolves into the distant haze.
+        for i in range(13):
+            x=65+i*12; y=35+math.sin(i*1.8)*3
+            self.line(c,[(x-4,y+4),(x,y-3),(x+5,y+4)],.11,.7)
+        c.restore()
+
     def draw(self,c,width,height,t,activity=.08,heat=None,network=0):
         c.save()
         # Uniform scale prevents ultrawide/resolution changes stretching bodies.
@@ -572,6 +601,7 @@ class Village:
         c.set_source_rgba(.16,.22,.21,.55)
         c.fill()
         self.line(c,coast,.32,1.4)
+        self.torsburgen(c)
         for x,y,size in sorted(self.trees,key=lambda v:v[1]):
             self.line(c,[(x,y),(x,y-size*1.4)],.20)
             self.line(c,[(x-size*.45,y-size*.3),(x,y-size*1.6),(x+size*.45,y-size*.3)],.18)
