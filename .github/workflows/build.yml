@@ -2,6 +2,9 @@ name: Build prototype ISO
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - live/usr/local/bin/hafthios-world
+      - tests/test_world.py
   workflow_dispatch:
     inputs:
       iso_run_id:

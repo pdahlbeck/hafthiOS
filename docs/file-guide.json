@@ -847,6 +847,21 @@
         "Rejects traversal, links, unknown destinations and checksum mismatches.",
         "Exercises real file replacement and restoration without modifying personal documents."
       ]
+    },
+    {
+      "path": ".github/workflows/world-update.yml",
+      "purpose": "Packages and verifies village-only updates without rebuilding the ISO.",
+      "when": "Runs for isolated wallpaper changes or manual dispatch.",
+      "connections": [
+        "scripts/build-update.py",
+        "scripts/test-boot.py",
+        "live/usr/local/bin/hafthios-update"
+      ],
+      "details": [
+        "Selects an unexpired VM-verified baseline ISO.",
+        "Renders current wallpaper and tests installation, rollback and installed disk boot before release.",
+        "Ships only hafthios-world; preserves other desktop components and user settings."
+      ]
     }
   ]
 }

@@ -1,0 +1,98 @@
+name: Verify village update
+on:
+  push:
+    branches: [main]
+    paths:
+      - live/usr/local/bin/hafthios-world
+      - tests/test_world.py
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: village-update
+  cancel-in-progress: false
+jobs:
+  village:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Select village-only changes
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          python3 - <<'PY'
+          import os, subprocess
+          changed=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
+          allowed={'live/usr/local/bin/hafthios-world','tests/test_world.py'}
+          enabled=os.environ['EVENT']=='workflow_dispatch' or bool(changed) and changed<=allowed
+          with open(os.environ['GITHUB_OUTPUT'],'a') as stream: stream.write('enabled='+str(enabled).lower()+'\n')
+          PY
+      - name: Find most recent verified full ISO
+        if: steps.scope.outputs.enabled == 'true'
+        id: baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request
+          def get(path):
+              request=urllib.request.Request('https://api.github.com/repos/pdahlbeck/hafthiOS/'+path,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN']})
+              return json.load(urllib.request.urlopen(request,timeout=30))
+          for run in get('actions/workflows/build.yml/runs?status=success&per_page=30')['workflow_runs']:
+              if any(a['name']=='hafthiOS-prototype' and not a['expired'] for a in get('actions/runs/'+str(run['id'])+'/artifacts')['artifacts']):
+                  with open(os.environ['GITHUB_OUTPUT'],'a') as stream: stream.write('run_id='+str(run['id'])+'\n')
+                  break
+          else: raise SystemExit('No verified, unexpired baseline ISO')
+          PY
+      - uses: actions/download-artifact@v4
+        if: steps.scope.outputs.enabled == 'true'
+        with:
+          name: hafthiOS-prototype
+          path: out
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.baseline.outputs.run_id }}
+      - name: Test and render the new village
+        if: steps.scope.outputs.enabled == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-cairo python3-pil
+          python3 -m unittest discover -s tests -v
+          python3 scripts/preview-world.py
+      - name: Package only the village
+        if: steps.scope.outputs.enabled == 'true'
+        run: |
+          mkdir -p village-root/usr/local/bin
+          cp live/usr/local/bin/hafthios-world village-root/usr/local/bin/
+          python3 scripts/build-update.py village-root out
+      - name: Verify update and rollback on installed baseline OS
+        if: steps.scope.outputs.enabled == 'true'
+        run: |
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-system-gui xorriso ovmf tesseract-ocr xvfb xauth xdotool libgl1-mesa-dri mesa-utils
+          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1920x1200x24" python3 scripts/test-boot.py
+      - name: Publish verified village update
+        if: steps.scope.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="hafthios-${GITHUB_SHA:0:12}"
+          printf 'Village-only update verified on an existing installed OS, including rollback.\nVerification: https://github.com/pdahlbeck/hafthiOS/actions/runs/%s\nRun sudo hafthios-update and log out/in. No new ISO.\n' "$GITHUB_RUN_ID" > /tmp/village-release.md
+          gh release create "$tag" out/hafthios-update.tar.gz out/hafthios-update.sha256 out/hafthios-update.json --target "$GITHUB_SHA" --title "Hafthi OS village ${GITHUB_SHA:0:12}" --notes-file /tmp/village-release.md --latest
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.scope.outputs.enabled == 'true'
+        with:
+          name: hafthiOS-village-update-evidence
+          path: |
+            out/hafthios-update.*
+            out/village*.png
+            out/installed-*.log
+            out/boot-serial.log
+            out/installed-*.ppm
+          retention-days: 14
