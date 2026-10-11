@@ -9,6 +9,22 @@ world = runpy.run_path(str(ROOT / 'live/usr/local/bin/hafthios-world'))
 
 
 class VillageTests(unittest.TestCase):
+    def test_fort_travellers_shrink_to_dots_and_keep_continuous_dry_routes(self):
+        self.assertLessEqual(22*world['distant_scale'](717),2)
+        self.assertEqual(world['distant_scale'](935),1)
+        for y in range(718,936):
+            self.assertGreater(world['distant_scale'](y),world['distant_scale'](y-1))
+        for tick in range(2401):
+            for a in world['fort_travellers'](tick):
+                x,y=a['position']
+                self.assertLess(y+15*a['scale'],world['shoreline_y'](x)-12)
+                for left,top,right,bottom in world['HOUSE_OBSTACLES']:
+                    self.assertFalse(left<x<right and top<y<bottom)
+            old={a['kind']:a for a in world['fort_travellers'](tick)}
+            for a in world['fort_travellers'](tick+1):
+                if a['kind'] in old:
+                    self.assertLess(world['math'].dist(a['position'],old[a['kind']]['position']),3)
+
     def test_woodland_animals_remain_in_dry_western_glades(self):
         for tick in range(3601):
             a=world['woodland_animals'](tick*.5)
