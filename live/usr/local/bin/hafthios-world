@@ -188,6 +188,46 @@ def evening_light(t):
     return max(0, math.sin(math.pi*(phase-1050)/750)) if phase>1050 else 0
 
 
+def fishing_state(t):
+    """Two connected voyages each day; the same fisher lands the catch."""
+    day=t%DAY_LENGTH
+    dock=(1397,1145)
+    offshore=(800,1284)
+    active=130<=day<930
+    phase=(day-130)%400 if active else 0
+    boat=dock
+    if active and phase<50:
+        boat=route_position([dock,(1240,1210),offshore],phase/50)
+        action='row'
+    elif active and phase<150:
+        boat=offshore
+        action='fish'
+    elif active and phase<200:
+        boat=route_position([offshore,(1240,1210),dock],(phase-150)/50)
+        action='row'
+    elif active and phase<220:
+        action='unload-fish'
+    else:
+        action='moored'
+    aboard=active and phase<220
+    position=boat
+    if active and not aboard:
+        gate=(1397,1020)
+        kitchen=door_position((1510,1018))
+        route=(dock,gate)+walking_route(gate,kitchen)[1:]
+        if phase<260:
+            position=route_position(route,(phase-220)/40)
+            action='fish-carry'
+        elif phase<320:
+            position=kitchen
+            action='clean-fish'
+        else:
+            position=route_position(tuple(reversed(route)),(phase-320)/80)
+            action='walk'
+    return {'visible':active,'position':position,'action':action,'phase':phase,
+            'boat':boat,'aboard':aboard,'catch':active and 150<=phase<260}
+
+
 def daily_actors(t):
     """Shared food delivery and supper, then each villager walks home."""
     field, store, quay, kitchen, oven = (2040,875),(1618,837),(1397,1145),(1510,1018),(1570,1040)
@@ -197,7 +237,7 @@ def daily_actors(t):
             (500,store,'sack'),(580,field,'walk'),(830,field,'harvest'),(900,store,'sack')],
            [(90,(1397,1020),'walk'),(130,quay,'walk'),(380,quay,'fish'),(400,(1397,1020),'fish-carry'),(440,kitchen,'fish-carry'),
             (560,kitchen,'clean-fish'),(600,(1397,1020),'walk'),(680,quay,'walk'),(850,quay,'fish'),(880,(1397,1020),'fish-carry'),(930,kitchen,'fish-carry')],
-           [(140,kitchen,'walk'),(440,kitchen,'talk'),(590,kitchen,'cook'),
+           [(140,kitchen,'walk'),(450,kitchen,'talk'),(610,kitchen,'cook'),
             (640,oven,'walk'),(890,oven,'bake'),(970,kitchen,'bread')],
            [(100,(1435,1025),'walk'),(400,(1435,1025),'net'),
             (460,(1460,1030),'walk'),(830,(1460,1030),'weave'),(950,(1435,1025),'net')],
@@ -218,7 +258,15 @@ def daily_actors(t):
         schedule=[(35,home,'indoors')]+jobs+[(985,(1550,1000),'walk'),
                     (1025,(seat[0],990),'walk'),(1050,seat,'walk'),(1230,seat,'eat'),
                     (1360,home,'walk'),(DAY_LENGTH,home,'indoors')]
-        actors.append(scheduled_actor(t,DAY_LENGTH,schedule))
+        state=scheduled_actor(t,DAY_LENGTH,schedule)
+        if i==1:
+            if 130<=t%DAY_LENGTH<930:
+                state=fishing_state(t)
+            elif t%DAY_LENGTH>=930:
+                state=scheduled_actor(t,DAY_LENGTH,[(930,quay,'indoors'),(955,(1397,1020),'walk'),(985,(1550,1000),'walk'),
+                    (1025,(seat[0],990),'walk'),(1050,seat,'walk'),(1230,seat,'eat'),
+                    (1360,home,'walk'),(DAY_LENGTH,home,'indoors')])
+        actors.append(state)
     return actors
 
 
@@ -480,11 +528,19 @@ class Village:
                 c.arc(x+10+phase*8,y-4+phase*7,.7,0,math.tau)
                 c.set_source_rgba(.78,.66,.40,.45*(1-phase))
                 c.fill()
+        elif action=='unload-fish':
+            lift=(math.sin(t*1.2)+1)*3
+            self.line(c,[(x+4,y-12),(x+15,y-9-lift)],.60,1.5)
+            self.line(c,[(x+10,y-4-lift),(x+10,y-11-lift),(x+23,y-11-lift),(x+23,y-4-lift),(x+10,y-4-lift)],.56,1.3,warm=True)
         elif action in ('cook','bake','clean-fish','net','weave','eat'):
             hand=math.sin(t*1.1+index)*3
             self.line(c,[(x+3,y-13),(x+8,y-10+hand),(x+13,y-11)],.58,1.5)
             if action in ('cook','bake'):
                 self.line(c,[(x+9,y-12),(x+17,y-5)],.56,1.1,warm=True)
+            elif action=='clean-fish':
+                self.line(c,[(x+9,y-6),(x+23,y-6)],.48,1.8,warm=True)
+                self.line(c,[(x+12,y-8),(x+17,y-10),(x+22,y-8),(x+17,y-7),(x+12,y-8)],.57,1)
+                self.line(c,[(x+13,y-11),(x+18,y-8+hand*.4)],.64,1)
             elif action=='eat':
                 self.line(c,[(x+4,y-12),(x+6,y-16+hand*.3)],.58,1.3)
         elif action=='harvest':
@@ -774,11 +830,30 @@ class Village:
                 self.line(c,[(1370,1170-i*7),(1382,1170-i*7),(1382,1177-i*7)],.42,warm=True)
             # A visible gangplank joins the hull and the cargo quay.
             self.line(c,[(1334,1170),(1370,1170)],.38,2)
-        # Fish from the quay and a small open rowing boat at consistent scale.
-        skiff=800+60*math.sin(t/100)
-        self.line(c,[(skiff-28,1280),(skiff-16,1292),(skiff+18,1292),(skiff+30,1280)],.40,1.5)
-        self.person(c,skiff,1284,t,2,action='fish')
-        self.line(c,[(skiff+4,1270),(skiff+42,1300)],.32)
+        # Solid wooden hull masks water strokes; one fisher follows its voyage.
+        fishing=fishing_state(t)
+        bx,by=fishing['boat']
+        c.move_to(bx-28,by-4)
+        c.line_to(bx-16,by+8)
+        c.line_to(bx+18,by+8)
+        c.line_to(bx+30,by-4)
+        c.close_path()
+        c.set_source_rgb(.24,.27,.22)
+        c.fill_preserve()
+        c.set_source_rgba(.65,.72,.66,.65)
+        c.set_line_width(1.5)
+        c.stroke()
+        self.line(c,[(bx-19,by),(bx+21,by)],.28,1,warm=True)
+        if fishing['catch']:
+            self.line(c,[(bx+12,by),(bx+12,by-7),(bx+23,by-7),(bx+23,by)],.55,1.5,warm=True)
+        if fishing['aboard']:
+            self.person(c,bx,by,t,54,action=fishing['action'])
+            if fishing['action']=='row':
+                sweep=math.sin(t*1.7)*10
+                self.line(c,[(bx-6,by-10),(bx-38,by+18+sweep)],.53,1.8,warm=True)
+                self.line(c,[(bx+6,by-10),(bx+38,by+18-sweep)],.53,1.8,warm=True)
+            elif fishing['action']=='fish':
+                self.line(c,[(bx+5,by-12),(bx+25,by-32),(bx+48,by+30)],.40)
         active_site=next(((x,y,size) for x,y,size,start in HOUSES if start>0 and start<t<start+600),HOUSES[-1][:3])
         jobs=[('hunt',(330,795)),('feed',(1762,1070)),
               ('build',(active_site[0]+65,active_site[1]+8)),
@@ -788,7 +863,7 @@ class Village:
         # to CPU activity without speeding up or interrupting those handoffs.
         workers=3+int(max(0,min(1,activity))*5)
         states=[(state['position'][1],30+i,state) for i,state in enumerate(connected_actors(t)) if state['visible']]
-        states += [(s['position'][1],50+i,s) for i,s in enumerate(daily_actors(t)) if s['visible']]
+        states += [(s['position'][1],50+i,s) for i,s in enumerate(daily_actors(t)) if s['visible'] and not s.get('aboard')]
         fuel=t%480
         if 135 <= fuel < 220:
             for i in range(4):

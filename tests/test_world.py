@@ -9,6 +9,20 @@ world = runpy.run_path(str(ROOT / 'live/usr/local/bin/hafthios-world'))
 
 
 class VillageTests(unittest.TestCase):
+    def test_fisher_rows_lands_cleans_and_returns_without_teleporting(self):
+        state=world['fishing_state']
+        self.assertEqual([state(t)['action'] for t in (140,200,300,340,370,420,500)],
+                         ['row','fish','row','unload-fish','fish-carry','clean-fish','walk'])
+        for tick in range(1300,9300):
+            a,b=state(tick/10),state((tick+1)/10)
+            self.assertLess(world['math'].dist(a['position'],b['position']),2)
+            if a['aboard']:
+                self.assertEqual(a['position'],a['boat'])
+            if a['action']=='clean-fish':
+                self.assertFalse(a['aboard'])
+                self.assertLess(a['position'][1],world['shoreline_y'](a['position'][0])-12)
+        self.assertEqual(state(530)['boat'],state(130)['boat'])
+
     def test_supper_seats_fire_benches_and_approaches_stay_on_dry_land(self):
         shore=world['shoreline_y']
         x,y=world['SUPPER_X'],world['SUPPER_Y']
@@ -17,7 +31,7 @@ class VillageTests(unittest.TestCase):
             self.assertLess(y+dy,shore(x+dx)-12)
         for tick in range(0,18001):
             for index,actor in enumerate(world['daily_actors'](tick/10)):
-                if actor['visible']:
+                if actor['visible'] and not actor.get('aboard'):
                     px,py=actor['position']
                     if not (index==1 and abs(px-1397)<.01 and 1020<=py<=1145):
                         self.assertLess(py,shore(px)-12)
@@ -25,7 +39,7 @@ class VillageTests(unittest.TestCase):
     def test_visible_villagers_do_not_cross_house_footprints(self):
         for tick in range(0,3601):
             for actor in world['daily_actors'](tick*.5)+world['connected_actors'](tick*.5):
-                if not actor['visible']:
+                if not actor['visible'] or actor.get('aboard'):
                     continue
                 x,y=actor['position']
                 for left,top,right,bottom in world['HOUSE_OBSTACLES']:
@@ -52,8 +66,8 @@ class VillageTests(unittest.TestCase):
 
     def test_food_delivery_supper_and_night_have_continuous_routes(self):
         actors=world['daily_actors']
-        self.assertEqual(actors(400)[1]['action'],'fish-carry')
-        self.assertEqual(actors(500)[1]['action'],'clean-fish')
+        self.assertEqual(actors(370)[1]['action'],'fish-carry')
+        self.assertEqual(actors(400)[1]['action'],'clean-fish')
         self.assertEqual(actors(500)[2]['action'],'cook')
         self.assertEqual(actors(800)[2]['action'],'bake')
         self.assertTrue(all(a['action']=='eat' for a in actors(1100)))
