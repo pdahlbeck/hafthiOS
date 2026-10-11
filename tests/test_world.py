@@ -9,6 +9,18 @@ world = runpy.run_path(str(ROOT / 'live/usr/local/bin/hafthios-world'))
 
 
 class VillageTests(unittest.TestCase):
+    def test_woodland_animals_remain_in_dry_western_glades(self):
+        for tick in range(3601):
+            a=world['woodland_animals'](tick*.5)
+            b=world['woodland_animals']((tick+1)*.5)
+            for animal,next_animal in zip(a,b):
+                x,y=animal['position']
+                self.assertLess(y+8,world['shoreline_y'](x)-12)
+                self.assertLess(x,350)
+                self.assertLess(world['math'].dist(animal['position'],next_animal['position']),1)
+                for left,top,right,bottom in world['HOUSE_OBSTACLES']:
+                    self.assertFalse(left<x<right and top<y<bottom)
+
     def test_fisher_rows_lands_cleans_and_returns_without_teleporting(self):
         state=world['fishing_state']
         self.assertEqual([state(t)['action'] for t in (140,200,300,340,370,420,500)],
