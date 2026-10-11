@@ -123,6 +123,18 @@ def shoreline_y(x):
 FORT_ROAD=((650,915),(570,935),(455,920),(365,860),(310,800),(265,760),(222,717))
 
 
+def longhouse_smoke_origin(x,y,size):
+    # Midpoint of the ridge, above the central hearth, not a modern chimney.
+    return x+19*size,y-66.5*size
+
+
+def smoke_path(x,y,size,t,index):
+    ox,oy=longhouse_smoke_origin(x,y,size)
+    phase=(t/80+index*.31)%1
+    return [(ox+math.sin(t/32+i*.65+index)*i*.5*size,
+             oy-i*3*size) for i in range(13)],phase
+
+
 def distant_scale(y):
     # Adult height decreases from 22 units to less than 2 at the far gate.
     return .09+.91*max(0,min(1,(y-717)/218))**1.5
@@ -487,6 +499,12 @@ class Village:
                          (left-6*size+(w+46*size)*f,y-h+1*size-9*size*f)],.13,.8,warm=True)
         self.line(c,[(right,y-9*size),(right+31*size,y-14*size),
                      (right+31*size,y-h-9*size),(right+16*size,y-h-pitch-9*size)],.28)
+        # Gable framing and low sill; restrained timber detail at village scale.
+        self.line(c,[(right+16*size,y-h-pitch-9*size),(right+16*size,y-12*size)],.18,.8,warm=True)
+        self.line(c,[(left,y-2*size),(right,y-11*size)],.22,1.3,warm=True)
+        for f in (.12,.88):
+            xx=left+w*f
+            self.line(c,[(xx,y-9*size*f),(xx+9*size,y-h-9*size*f)],.18,1.1,warm=True)
         for i in range(10):
             f=i/9
             self.line(c,[(left+w*f,y-9*size*f),
@@ -494,20 +512,25 @@ class Village:
         door=x-32*size
         self.line(c,[(door,y-3*size),(door,y-24*size),
                      (door+14*size,y-25*size),(door+14*size,y-4*size)],.40)
+        for offset in (3,7,11):
+            self.line(c,[(door+offset*size,y-5*size),(door+offset*size,y-23*size)],.18,.7,warm=True)
+        self.line(c,[(door,y-8*size),(door+14*size,y-9*size)],.23,.8,warm=True)
         for xx in (x+18*size,x+57*size):
             c.rectangle(xx,y-h+7*size,8*size,4*size)
             c.set_source_rgba(.87,.68,.40,.21+.10*activity)
             c.fill()
-        # Hearth smoke rises through a subtle roof opening.
-        for puff in range(3):
-            phase=(t/18+puff/3)%1
-            xx=x+math.sin(t/16+puff)*phase*13
-            yy=y-h-pitch-5*size-phase*48
-            c.move_to(xx,yy)
-            c.curve_to(xx-8,yy-5,xx+12,yy-13,xx+3,yy-22)
-            c.set_source_rgba(.67,.75,.72,(1-phase)*(.08+.04*activity))
-            c.set_line_width(2*size)
-            c.stroke()
+        # Small roof vent over the hearth. The base stays attached to its opening;
+        # drifting smoke fades upwards, rather than detached cartoon puffs.
+        ox,oy=longhouse_smoke_origin(x,y,size)
+        vent=[(ox-7*size,oy),(ox+6*size,oy-.6*size),
+              (ox+3*size,oy+4*size),(ox-10*size,oy+4.6*size)]
+        c.move_to(*vent[0])
+        for point in vent[1:]: c.line_to(*point)
+        c.close_path();c.set_source_rgb(.12,.17,.16);c.fill()
+        self.line(c,vent[:2],.25,.8,warm=True)
+        points,phase=smoke_path(x,y,size,t,int(x))
+        for i,(a,b) in enumerate(zip(points,points[1:])):
+            self.line(c,[a,b],(.07+.025*math.sin(phase*math.tau))*(1-i/12),size*(1+i*.08))
 
     def person(self,c,x,y,t,index,carrying=False,action="walk"):
         step=math.sin(t*2.5+index)*1.3 if action in ("walk","carry","timber","tools","cart","sack","fish-carry","bread","herd") else 0

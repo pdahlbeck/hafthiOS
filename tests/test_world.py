@@ -9,6 +9,16 @@ world = runpy.run_path(str(ROOT / 'live/usr/local/bin/hafthios-world'))
 
 
 class VillageTests(unittest.TestCase):
+    def test_longhouse_smoke_stays_on_central_roof_vent_and_rises(self):
+        for x,y,size,_ in world['HOUSES']:
+            ox,oy=world['longhouse_smoke_origin'](x,y,size)
+            self.assertAlmostEqual(oy,y-66.5*size)
+            for t in (0,79.9,80,900):
+                points,phase=world['smoke_path'](x,y,size,t,int(x))
+                self.assertEqual(points[0],(ox,oy))
+                self.assertTrue(all(b[1]<a[1] for a,b in zip(points,points[1:])))
+                self.assertLess(max(abs(px-ox) for px,py in points),7*size)
+
     def test_fort_travellers_shrink_to_dots_and_keep_continuous_dry_routes(self):
         self.assertLessEqual(22*world['distant_scale'](717),2)
         self.assertEqual(world['distant_scale'](935),1)
